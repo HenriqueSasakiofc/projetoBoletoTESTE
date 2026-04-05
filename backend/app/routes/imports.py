@@ -1,146 +1,197 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
-from ..dependencies import get_db, require_permission
-from ..services.importer import (
-    cleanup_old_staging,
-    create_customer_from_pending,
-    create_upload_batch,
-    get_batch_preview,
-    merge_batch,
-    resolve_pending_with_customer,
+from ..dependencies import get_current_user, get_db, require_permission
+from ..models import CustomerLinkPending, RoleEnum, UploadBatch
+from ..schemas import (
+    CreateCustomerFromPendingPayload,
+    LinkExistingPayload,
+    PendingItem,
+    UploadBatchSummary,
 )
-from ..services.notifier import mask_document
+from ..services.importer import (
+    approve_batch_merge,
+    create_upload_batch_from_files,
+    resolve_pending_with_existing_customer,
+    resolve_pending_with_new_customer,
+)
 
 router = APIRouter(prefix="/api", tags=["imports"])
 
 
-@router.post("/upload-batches", response_model=schemas.UploadBatchPreviewOut)
-async def upload_batch(
-    clientes: UploadFile = File(...),
-    contas: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    user=Depends(require_permission("upload")),
-):
-    clients_bytes = await clientes.read()
-    receivables_bytes = await contas.read()
-    cleanup_old_staging(db, user.company_id)
-    batch = create_upload_batch(
-        db,
-        user=user,
-        clients_filename=clientes.filename or "clientes.xlsx",
-        clients_bytes=clients_bytes,
-        receivables_filename=contas.filename or "contas.xlsx",
-        receivables_bytes=receivables_bytes,
-    )
-    return get_batch_preview(db, batch)
-
-
-@router.get("/upload-batches/{batch_id}", response_model=schemas.BatchSummaryOut)
-def get_batch(batch_id: int, db: Session = Depends(get_db), user=Depends(require_permission("upload"))):
-    batch = (
-        db.query(models.UploadBatch)
-        .filter(models.UploadBatch.company_id == user.company_id, models.UploadBatch.id == batch_id)
-        .first()
-    )
+def _get_batch_or_404(db: Session, batch_id: int, company_id: int) -> UploadBatch:
+    batch = db.execute(
+        select(UploadBatch).where(
+            UploadBatch.id == batch_id,
+            UploadBatch.company_id == company_id,
+        )
+    ).scalar_one_or_none()
     if not batch:
-        raise HTTPException(status_code=404, detail="Lote não encontrado")
+        raise HTTPException(status_code=404, detail="Lote não encontrado.")
     return batch
 
 
-@router.post("/upload-batches/{batch_id}/approve-merge")
+def _get_pending_or_404(db: Session, pending_id: int, company_id: int) -> CustomerLinkPending:
+    pending = db.execute(
+        select(CustomerLinkPending).where(
+            CustomerLinkPending.id == pending_id,
+            CustomerLinkPending.company_id == company_id,
+        )
+    ).scalar_one_or_none()
+    if not pending:
+        raise HTTPException(status_code=404, detail="Pendência não encontrada.")
+    return pending
+
+
+@router.post(
+    "/upload-batches",
+    response_model=UploadBatchSummary,
+    dependencies=[Depends(require_permission(RoleEnum.IMPORTER, RoleEnum.APPROVER))],
+)
+async def upload_batches(
+    customers_file: UploadFile = File(...),
+    receivables_file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    batch = await create_upload_batch_from_files(
+        db=db,
+        company_id=current_user.company_id,
+        uploaded_by_user_id=current_user.id,
+        customers_upload=customers_file,
+        receivables_upload=receivables_file,
+    )
+    return batch
+
+
+@router.get(
+    "/upload-batches/{batch_id}",
+    response_model=UploadBatchSummary,
+    dependencies=[Depends(require_permission(RoleEnum.IMPORTER, RoleEnum.APPROVER, RoleEnum.AUDITOR))],
+)
+def get_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    return _get_batch_or_404(db, batch_id, current_user.company_id)
+
+
+@router.post(
+    "/upload-batches/{batch_id}/approve-merge",
+    response_model=UploadBatchSummary,
+    dependencies=[Depends(require_permission(RoleEnum.APPROVER))],
+)
 def approve_merge(
     batch_id: int,
-    payload: schemas.ApproveBatchIn,
     db: Session = Depends(get_db),
-    user=Depends(require_permission("approve_import")),
+    current_user=Depends(get_current_user),
 ):
-    if not payload.confirm:
-        raise HTTPException(status_code=400, detail="Confirmação obrigatória")
-    batch = (
-        db.query(models.UploadBatch)
-        .filter(models.UploadBatch.company_id == user.company_id, models.UploadBatch.id == batch_id)
-        .first()
-    )
-    if not batch:
-        raise HTTPException(status_code=404, detail="Lote não encontrado")
-    merge_batch(db, batch=batch, approved_by=user)
-    db.commit()
-    return {"ok": True, "batch_id": batch.id, "status": batch.status}
+    batch = _get_batch_or_404(db, batch_id, current_user.company_id)
+    return approve_batch_merge(db=db, batch=batch, current_user=current_user)
 
 
-@router.get("/upload-batches/{batch_id}/pendings", response_model=list[schemas.PendingLinkOut])
-def get_pendings(batch_id: int, db: Session = Depends(get_db), user=Depends(require_permission("manage_clients"))):
-    batch = (
-        db.query(models.UploadBatch)
-        .filter(models.UploadBatch.company_id == user.company_id, models.UploadBatch.id == batch_id)
-        .first()
-    )
-    if not batch:
-        raise HTTPException(status_code=404, detail="Lote não encontrado")
-    pendings = (
-        db.query(models.CustomerLinkPending, models.StagingReceivable)
-        .join(models.StagingReceivable, models.StagingReceivable.id == models.CustomerLinkPending.staging_receivable_id)
-        .filter(models.CustomerLinkPending.company_id == user.company_id, models.CustomerLinkPending.upload_batch_id == batch_id)
-        .order_by(models.CustomerLinkPending.created_at.asc())
-        .all()
-    )
-    return [
-        {
-            "id": pending.id,
-            "staging_receivable_id": staging.id,
-            "customer_name": staging.customer_name,
-            "customer_document_masked": mask_document(staging.customer_document_number),
-            "receivable_number": staging.receivable_number,
-            "nosso_numero": staging.nosso_numero,
-            "status": pending.status,
-            "suggested_customer_id": pending.suggested_customer_id,
-        }
-        for pending, staging in pendings
-    ]
+@router.get(
+    "/upload-batches/{batch_id}/pendings",
+    response_model=list[PendingItem],
+    dependencies=[Depends(require_permission(RoleEnum.IMPORTER, RoleEnum.APPROVER, RoleEnum.CLIENT_OPERATOR))],
+)
+def list_batch_pendings(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    batch = _get_batch_or_404(db, batch_id, current_user.company_id)
+    items: list[PendingItem] = []
+
+    for pending in batch.pendings:
+        staging = pending.staging_receivable
+        items.append(
+            PendingItem(
+                id=pending.id,
+                status=pending.status.value,
+                note=pending.note,
+                suggested_customer_id=pending.suggested_customer_id,
+                resolved_customer_id=pending.resolved_customer_id,
+                staging_receivable_id=staging.id,
+                customer_name=staging.customer_name,
+                customer_document_number=staging.customer_document_number,
+                receivable_number=staging.receivable_number,
+                nosso_numero=staging.nosso_numero,
+                due_date=staging.due_date,
+                amount_total=staging.amount_total,
+            )
+        )
+
+    return items
 
 
-@router.post("/pendings/{pending_id}/link-existing")
+@router.post(
+    "/pendings/{pending_id}/link-existing",
+    response_model=PendingItem,
+    dependencies=[Depends(require_permission(RoleEnum.CLIENT_OPERATOR, RoleEnum.APPROVER))],
+)
 def link_existing_customer(
     pending_id: int,
-    payload: schemas.LinkPendingIn,
+    payload: LinkExistingPayload,
     db: Session = Depends(get_db),
-    user=Depends(require_permission("manage_clients")),
+    current_user=Depends(get_current_user),
 ):
-    pending = (
-        db.query(models.CustomerLinkPending)
-        .filter(models.CustomerLinkPending.company_id == user.company_id, models.CustomerLinkPending.id == pending_id)
-        .first()
+    pending = _get_pending_or_404(db, pending_id, current_user.company_id)
+    pending = resolve_pending_with_existing_customer(
+        db=db,
+        pending=pending,
+        customer_id=payload.customer_id,
+        current_user=current_user,
     )
-    if not pending:
-        raise HTTPException(status_code=404, detail="Pendência não encontrada")
-    customer = (
-        db.query(models.Customer)
-        .filter(models.Customer.company_id == user.company_id, models.Customer.id == payload.customer_id, models.Customer.is_active.is_(True))
-        .first()
+    staging = pending.staging_receivable
+    return PendingItem(
+        id=pending.id,
+        status=pending.status.value,
+        note=pending.note,
+        suggested_customer_id=pending.suggested_customer_id,
+        resolved_customer_id=pending.resolved_customer_id,
+        staging_receivable_id=staging.id,
+        customer_name=staging.customer_name,
+        customer_document_number=staging.customer_document_number,
+        receivable_number=staging.receivable_number,
+        nosso_numero=staging.nosso_numero,
+        due_date=staging.due_date,
+        amount_total=staging.amount_total,
     )
-    if not customer:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    resolve_pending_with_customer(db, pending=pending, customer=customer, user=user, note="Vinculado manualmente")
-    db.commit()
-    return {"ok": True, "pending_id": pending.id, "status": pending.status}
 
 
-@router.post("/pendings/{pending_id}/create-customer")
-def create_customer_pending(
+@router.post(
+    "/pendings/{pending_id}/create-customer",
+    response_model=PendingItem,
+    dependencies=[Depends(require_permission(RoleEnum.CLIENT_OPERATOR, RoleEnum.APPROVER))],
+)
+def create_customer_from_pending(
     pending_id: int,
-    payload: schemas.CreateCustomerFromPendingIn,
+    payload: CreateCustomerFromPendingPayload,
     db: Session = Depends(get_db),
-    user=Depends(require_permission("manage_clients")),
+    current_user=Depends(get_current_user),
 ):
-    pending = (
-        db.query(models.CustomerLinkPending)
-        .filter(models.CustomerLinkPending.company_id == user.company_id, models.CustomerLinkPending.id == pending_id)
-        .first()
+    pending = _get_pending_or_404(db, pending_id, current_user.company_id)
+    pending = resolve_pending_with_new_customer(
+        db=db,
+        pending=pending,
+        payload=payload,
+        current_user=current_user,
     )
-    if not pending:
-        raise HTTPException(status_code=404, detail="Pendência não encontrada")
-    customer = create_customer_from_pending(db, pending=pending, payload=payload.model_dump(), user=user)
-    db.commit()
-    return {"ok": True, "pending_id": pending.id, "customer_id": customer.id, "status": pending.status}
+    staging = pending.staging_receivable
+    return PendingItem(
+        id=pending.id,
+        status=pending.status.value,
+        note=pending.note,
+        suggested_customer_id=pending.suggested_customer_id,
+        resolved_customer_id=pending.resolved_customer_id,
+        staging_receivable_id=staging.id,
+        customer_name=staging.customer_name,
+        customer_document_number=staging.customer_document_number,
+        receivable_number=staging.receivable_number,
+        nosso_numero=staging.nosso_numero,
+        due_date=staging.due_date,
+        amount_total=staging.amount_total,
+    )

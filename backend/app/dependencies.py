@@ -1,13 +1,13 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .auth import decode_access_token, user_has_permission
+from .auth import decode_access_token
 from .db import SessionLocal
-from . import models
+from .models import RoleEnum, User
 
-bearer_scheme = HTTPBearer(auto_error=True)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def get_db():
@@ -18,28 +18,25 @@ def get_db():
         db.close()
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> models.User:
-    token = credentials.credentials
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     try:
         payload = decode_access_token(token)
-    except JWTError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido") from exc
+        user_id = int(payload.get("sub"))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Autenticação inválida.") from exc
 
-    user = db.query(models.User).filter(models.User.id == int(payload["sub"])).first()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário inválido")
-    if user.company_id != int(payload["company_id"]):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
+    user = db.execute(select(User).where(User.id == user_id, User.is_active.is_(True))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário não encontrado.")
     return user
 
 
-def require_permission(permission: str):
-    def _checker(user: models.User = Depends(get_current_user)) -> models.User:
-        if not user_has_permission(user.role, permission):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão")
-        return user
+def require_permission(*allowed_roles: RoleEnum):
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role == RoleEnum.ADMIN:
+            return current_user
+        if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem permissão para esta ação.")
+        return current_user
 
-    return _checker
+    return dependency

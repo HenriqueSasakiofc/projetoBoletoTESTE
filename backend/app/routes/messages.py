@@ -1,157 +1,246 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
-from ..dependencies import get_db, require_permission
+from ..dependencies import get_current_user, get_db, require_permission
+from ..models import Customer, MessageTemplate, OutboxMessage, Receivable, RoleEnum
+from ..schemas import (
+    DispatchResponse,
+    ManualMessageCreate,
+    ManualMessageQueuedResponse,
+    MessageTemplatePayload,
+    MessageTemplateResponse,
+    OutboxItem,
+    PreviewResponse,
+)
 from ..services.notifier import (
     ALLOWED_PLACEHOLDERS,
-    dispatch_outbox,
-    get_active_template,
-    mask_email,
-    preview_message,
+    build_customer_context,
+    build_receivable_context,
+    dispatch_pending_outbox,
     queue_manual_message,
     queue_standard_message,
-    upsert_active_template,
+    render_template,
 )
 
 router = APIRouter(prefix="/api", tags=["messages"])
 
 
-@router.get("/message-template", response_model=schemas.TemplateOut)
-def get_message_template(db: Session = Depends(get_db), user=Depends(require_permission("prepare_send"))):
-    template = get_active_template(db, user.company_id)
-    return {
-        "id": template.id,
-        "subject_template": template.subject_template,
-        "body_template": template.body_template,
-        "placeholders": sorted(ALLOWED_PLACEHOLDERS),
-    }
+def _get_or_create_template(db: Session, company_id: int) -> MessageTemplate:
+    template = db.execute(
+        select(MessageTemplate).where(MessageTemplate.company_id == company_id)
+    ).scalar_one_or_none()
+
+    if template:
+        return template
+
+    template = MessageTemplate(
+        company_id=company_id,
+        subject="Lembrete de vencimento - {{receivable_number}}",
+        body=(
+            "Olá, {{customer_name}}.\n\n"
+            "Este é um lembrete sobre o título {{receivable_number}}.\n"
+            "Vencimento: {{due_date}}\n"
+            "Valor: R$ {{amount_total}}\n"
+            "Saldo: R$ {{balance_amount}}\n\n"
+            "Se o pagamento já foi realizado, desconsidere."
+        ),
+        is_active=True,
+    )
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    return template
 
 
-@router.put("/message-template", response_model=schemas.TemplateOut)
-def update_message_template(payload: schemas.TemplateIn, db: Session = Depends(get_db), user=Depends(require_permission("prepare_send"))):
-    template = upsert_active_template(db, user.company_id, payload.subject_template, payload.body_template)
-    db.add(
-        models.AuditLog(
-            company_id=user.company_id,
-            user_id=user.id,
-            entity_type="message_template",
-            entity_id=str(template.id),
-            action="updated",
-            details='{"source": "api"}',
+@router.get(
+    "/message-template",
+    response_model=MessageTemplateResponse,
+    dependencies=[Depends(require_permission(RoleEnum.SENDER, RoleEnum.APPROVER, RoleEnum.CLIENT_OPERATOR))],
+)
+def get_template(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    template = _get_or_create_template(db, current_user.company_id)
+    return MessageTemplateResponse(
+        subject=template.subject,
+        body=template.body,
+        allowed_placeholders=ALLOWED_PLACEHOLDERS,
+    )
+
+
+@router.put(
+    "/message-template",
+    response_model=MessageTemplateResponse,
+    dependencies=[Depends(require_permission(RoleEnum.SENDER, RoleEnum.APPROVER))],
+)
+def update_template(
+    payload: MessageTemplatePayload,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    template = _get_or_create_template(db, current_user.company_id)
+    render_template(payload.subject, payload.body, {})  # valida placeholders
+    template.subject = payload.subject
+    template.body = payload.body
+    db.commit()
+    db.refresh(template)
+
+    return MessageTemplateResponse(
+        subject=template.subject,
+        body=template.body,
+        allowed_placeholders=ALLOWED_PLACEHOLDERS,
+    )
+
+
+@router.post(
+    "/message-template/preview",
+    response_model=PreviewResponse,
+    dependencies=[Depends(require_permission(RoleEnum.SENDER, RoleEnum.APPROVER, RoleEnum.CLIENT_OPERATOR))],
+)
+def preview_template(
+    payload: MessageTemplatePayload,
+    customer_id: int | None = None,
+    receivable_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    context: dict = {}
+
+    if customer_id is not None:
+        customer = db.execute(
+            select(Customer).where(Customer.id == customer_id, Customer.company_id == current_user.company_id)
+        ).scalar_one_or_none()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+        context.update(build_customer_context(customer))
+
+    if receivable_id is not None:
+        receivable = db.execute(
+            select(Receivable).where(Receivable.id == receivable_id, Receivable.company_id == current_user.company_id)
+        ).scalar_one_or_none()
+        if not receivable:
+            raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
+        customer = db.execute(
+            select(Customer).where(Customer.id == receivable.customer_id, Customer.company_id == current_user.company_id)
+        ).scalar_one_or_none()
+        context.update(build_receivable_context(customer, receivable))
+
+    subject, body = render_template(payload.subject, payload.body, context)
+    return PreviewResponse(subject=subject, body=body, context_used=context)
+
+
+@router.post(
+    "/receivables/{receivable_id}/queue-standard-message",
+    response_model=ManualMessageQueuedResponse,
+    dependencies=[Depends(require_permission(RoleEnum.SENDER, RoleEnum.APPROVER))],
+)
+def queue_standard_receivable_message(
+    receivable_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    receivable = db.execute(
+        select(Receivable).where(
+            Receivable.id == receivable_id,
+            Receivable.company_id == current_user.company_id,
         )
-    )
-    db.commit()
-    return {
-        "id": template.id,
-        "subject_template": template.subject_template,
-        "body_template": template.body_template,
-        "placeholders": sorted(ALLOWED_PLACEHOLDERS),
-    }
+    ).scalar_one_or_none()
 
-
-@router.post("/message-template/preview", response_model=schemas.PreviewOut)
-def preview_template(payload: schemas.TemplatePreviewIn, db: Session = Depends(get_db), user=Depends(require_permission("prepare_send"))):
-    company = db.query(models.Company).filter(models.Company.id == user.company_id).first()
-    receivable = (
-        db.query(models.Receivable)
-        .filter(models.Receivable.company_id == user.company_id, models.Receivable.id == payload.receivable_id)
-        .first()
-    )
     if not receivable:
-        raise HTTPException(status_code=404, detail="Título não encontrado")
-    subject, body = preview_message(db, company, receivable, payload.subject_template, payload.body_template)
-    return {"subject": subject, "body": body}
+        raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
 
-
-@router.post("/receivables/{receivable_id}/queue-standard-message")
-def queue_receivable_message(receivable_id: int, db: Session = Depends(get_db), user=Depends(require_permission("prepare_send"))):
-    company = db.query(models.Company).filter(models.Company.id == user.company_id).first()
-    receivable = (
-        db.query(models.Receivable)
-        .filter(models.Receivable.company_id == user.company_id, models.Receivable.id == receivable_id, models.Receivable.is_active.is_(True))
-        .first()
+    queued = queue_standard_message(
+        db=db,
+        company_id=current_user.company_id,
+        receivable=receivable,
+        user_id=current_user.id,
     )
-    if not receivable:
-        raise HTTPException(status_code=404, detail="Título não encontrado")
-    template = get_active_template(db, user.company_id)
-    item = queue_standard_message(db, company, receivable, template)
-    db.commit()
-    return {"ok": True, "outbox_id": item.id, "status": item.status}
+    return ManualMessageQueuedResponse(outbox_message_id=queued.id, status=queued.status.value)
 
 
-@router.post("/customers/{customer_id}/send-manual-message")
+@router.post(
+    "/customers/{customer_id}/send-manual-message",
+    response_model=ManualMessageQueuedResponse,
+    dependencies=[Depends(require_permission(RoleEnum.SENDER, RoleEnum.APPROVER, RoleEnum.CLIENT_OPERATOR))],
+)
 def send_manual_message(
     customer_id: int,
-    payload: schemas.ManualMessageIn,
+    payload: ManualMessageCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_permission("prepare_send")),
+    current_user=Depends(get_current_user),
 ):
-    company = db.query(models.Company).filter(models.Company.id == user.company_id).first()
-    customer = (
-        db.query(models.Customer)
-        .filter(models.Customer.company_id == user.company_id, models.Customer.id == customer_id, models.Customer.is_active.is_(True))
-        .first()
-    )
-    if not customer:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    receivable = None
-    if payload.receivable_id is not None:
-        receivable = (
-            db.query(models.Receivable)
-            .filter(models.Receivable.company_id == user.company_id, models.Receivable.id == payload.receivable_id)
-            .first()
+    customer = db.execute(
+        select(Customer).where(
+            Customer.id == customer_id,
+            Customer.company_id == current_user.company_id,
         )
-        if not receivable:
-            raise HTTPException(status_code=404, detail="Título não encontrado")
-    item = queue_manual_message(
-        db,
-        company=company,
+    ).scalar_one_or_none()
+
+    if not customer:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+
+    queued = queue_manual_message(
+        db=db,
+        company_id=current_user.company_id,
         customer=customer,
-        receivable=receivable,
-        user=user,
+        user_id=current_user.id,
+        recipient_email=payload.recipient_email,
         subject=payload.subject,
         body=payload.body,
     )
-    db.commit()
-    return {"ok": True, "outbox_id": item.id, "status": item.status}
+    return ManualMessageQueuedResponse(outbox_message_id=queued.id, status=queued.status.value)
 
 
-@router.get("/outbox", response_model=list[schemas.OutboxItemOut])
-def list_outbox(db: Session = Depends(get_db), user=Depends(require_permission("prepare_send"))):
-    items = (
-        db.query(models.OutboxMessage)
-        .filter(models.OutboxMessage.company_id == user.company_id)
-        .order_by(models.OutboxMessage.created_at.desc())
-        .limit(200)
-        .all()
+@router.get(
+    "/outbox",
+    response_model=list[OutboxItem],
+    dependencies=[Depends(require_permission(RoleEnum.SENDER, RoleEnum.APPROVER, RoleEnum.AUDITOR))],
+)
+def list_outbox(
+    status_filter: str | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    stmt = (
+        select(OutboxMessage)
+        .where(OutboxMessage.company_id == current_user.company_id)
+        .order_by(OutboxMessage.created_at.desc())
     )
+
+    rows = list(db.execute(stmt).scalars().all())
+    if status_filter:
+        rows = [row for row in rows if row.status.value == status_filter]
+
     return [
-        {
-            "id": item.id,
-            "recipient_email_masked": mask_email(item.recipient_email),
-            "subject": item.subject,
-            "status": item.status,
-            "message_kind": item.message_kind,
-            "created_at": item.created_at,
-            "sent_at": item.sent_at,
-        }
-        for item in items
+        OutboxItem(
+            id=row.id,
+            message_kind=row.message_kind,
+            recipient_email=row.recipient_email,
+            subject=row.subject,
+            status=row.status.value,
+            error_message=row.error_message,
+            sent_at=row.sent_at,
+            created_at=row.created_at,
+        )
+        for row in rows
     ]
 
 
-@router.post("/outbox/dispatch", response_model=schemas.DispatchOut)
-def dispatch(db: Session = Depends(get_db), user=Depends(require_permission("dispatch"))):
-    sent, failed = dispatch_outbox(db, user.company_id)
-    db.add(
-        models.AuditLog(
-            company_id=user.company_id,
-            user_id=user.id,
-            entity_type="outbox",
-            entity_id="company",
-            action="dispatch",
-            details=f'{{"sent": {sent}, "failed": {failed}}}',
-        )
+@router.post(
+    "/outbox/dispatch",
+    response_model=DispatchResponse,
+    dependencies=[Depends(require_permission(RoleEnum.SENDER, RoleEnum.APPROVER))],
+)
+def dispatch_outbox(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = dispatch_pending_outbox(
+        db=db,
+        company_id=current_user.company_id,
+        limit=limit,
     )
-    db.commit()
-    return {"sent": sent, "failed": failed}
+    return DispatchResponse(**result)

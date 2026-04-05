@@ -1,298 +1,338 @@
-from datetime import datetime, timezone
+from __future__ import annotations
+
+import enum
+from datetime import date, datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
-    Column,
     Date,
     DateTime,
+    Enum,
     ForeignKey,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
-    Index,
+    func,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+class RoleEnum(str, enum.Enum):
+    ADMIN = "ADMIN"
+    IMPORTER = "IMPORTER"
+    APPROVER = "APPROVER"
+    SENDER = "SENDER"
+    AUDITOR = "AUDITOR"
+    CLIENT_OPERATOR = "CLIENT_OPERATOR"
 
 
-class Company(Base):
+class BatchStatusEnum(str, enum.Enum):
+    PROCESSING = "processing"
+    PREVIEW_READY = "preview_ready"
+    PENDING_REVIEW = "pending_review"
+    MERGED = "merged"
+    FAILED = "failed"
+
+
+class ValidationStatusEnum(str, enum.Enum):
+    VALID = "valid"
+    INVALID = "invalid"
+
+
+class PendingStatusEnum(str, enum.Enum):
+    OPEN = "open"
+    RESOLVED = "resolved"
+
+
+class ReceivableStatusEnum(str, enum.Enum):
+    PAGO = "pago"
+    EM_ABERTO = "em_aberto"
+    VENCENDO = "vencendo"
+    INADIMPLENTE = "inadimplente"
+    CANCELADO = "cancelado"
+
+
+class MessageStatusEnum(str, enum.Enum):
+    PENDING = "pending"
+    SENT = "sent"
+    ERROR = "error"
+    CANCELLED = "cancelled"
+
+
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class Company(Base, TimestampMixin):
     __tablename__ = "companies"
 
-    id = Column(Integer, primary_key=True, index=True)
-    legal_name = Column(String(200), nullable=False)
-    trade_name = Column(String(200), nullable=True)
-    slug = Column(String(120), nullable=False, unique=True, index=True)
-    is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
+    legal_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    trade_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    users: Mapped[list["User"]] = relationship(back_populates="company")
+    customers: Mapped[list["Customer"]] = relationship(back_populates="company")
+    receivables: Mapped[list["Receivable"]] = relationship(back_populates="company")
 
 
-class User(Base):
+class User(Base, TimestampMixin):
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("company_id", "email", name="uq_user_company_email"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    full_name = Column(String(200), nullable=False)
-    email = Column(String(255), nullable=False, unique=True, index=True)
-    password_hash = Column(String(255), nullable=False)
-    role = Column(String(30), nullable=False, index=True)
-    is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[RoleEnum] = mapped_column(Enum(RoleEnum), nullable=False, default=RoleEnum.ADMIN)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    company = relationship("Company")
+    company: Mapped["Company"] = relationship(back_populates="users")
 
 
-class UploadBatch(Base):
+class UploadBatch(Base, TimestampMixin):
     __tablename__ = "upload_batches"
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    uploaded_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
-    batch_reference = Column(String(64), nullable=False, unique=True, index=True)
-    clients_filename = Column(String(255), nullable=False)
-    receivables_filename = Column(String(255), nullable=False)
-    clients_file_hash = Column(String(64), nullable=False)
-    receivables_file_hash = Column(String(64), nullable=False)
-    status = Column(String(30), nullable=False, default="uploaded", index=True)
-    preview_total_customers = Column(Integer, nullable=False, default=0)
-    preview_total_receivables = Column(Integer, nullable=False, default=0)
-    preview_total_pending_links = Column(Integer, nullable=False, default=0)
-    preview_total_errors = Column(Integer, nullable=False, default=0)
-    approved_at = Column(DateTime(timezone=True), nullable=True)
-    approved_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    uploaded_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    approved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    customers_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    receivables_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    customers_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    receivables_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[BatchStatusEnum] = mapped_column(
+        Enum(BatchStatusEnum), default=BatchStatusEnum.PROCESSING, nullable=False
+    )
+    preview_customers_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    preview_receivables_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    preview_invalid_customers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    preview_invalid_receivables: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    preview_pending_links: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    merged_customers_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    merged_receivables_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
 
-    company = relationship("Company")
-    uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])
-    approved_by = relationship("User", foreign_keys=[approved_by_user_id])
+    staging_customers: Mapped[list["StagingCustomer"]] = relationship(
+        back_populates="upload_batch", cascade="all, delete-orphan"
+    )
+    staging_receivables: Mapped[list["StagingReceivable"]] = relationship(
+        back_populates="upload_batch", cascade="all, delete-orphan"
+    )
+    pendings: Mapped[list["CustomerLinkPending"]] = relationship(
+        back_populates="upload_batch", cascade="all, delete-orphan"
+    )
 
 
-class StagingCustomer(Base):
+class StagingCustomer(Base, TimestampMixin):
     __tablename__ = "staging_customers"
-    __table_args__ = (
-        UniqueConstraint("upload_batch_id", "row_number", name="uq_staging_customers_batch_row"),
-        Index("ix_staging_customers_company_batch", "company_id", "upload_batch_id"),
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    upload_batch_id: Mapped[int] = mapped_column(ForeignKey("upload_batches.id"), index=True, nullable=False)
+    row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    external_code: Mapped[str | None] = mapped_column(String(120), index=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    document_number: Mapped[str | None] = mapped_column(String(20), index=True)
+    email_billing: Mapped[str | None] = mapped_column(String(255))
+    email_financial: Mapped[str | None] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    other_contacts: Mapped[str | None] = mapped_column(Text)
+    raw_payload: Mapped[dict | None] = mapped_column(JSON)
+    validation_status: Mapped[ValidationStatusEnum] = mapped_column(
+        Enum(ValidationStatusEnum), default=ValidationStatusEnum.VALID, nullable=False
     )
+    validation_errors: Mapped[list | None] = mapped_column(JSON)
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="CASCADE"), nullable=False, index=True)
-    row_number = Column(Integer, nullable=False)
-    external_code = Column(String(120), nullable=True)
-    full_name = Column(String(200), nullable=True)
-    normalized_name = Column(String(200), nullable=True, index=True)
-    document_number = Column(String(30), nullable=True)
-    email_billing = Column(String(255), nullable=True)
-    email_financial = Column(String(255), nullable=True)
-    phone = Column(String(50), nullable=True)
-    other_contacts = Column(Text, nullable=True)
-    raw_payload = Column(Text, nullable=False, default="{}")
-    validation_status = Column(String(20), nullable=False, default="pending", index=True)
-    validation_errors = Column(Text, nullable=False, default="[]")
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    upload_batch: Mapped["UploadBatch"] = relationship(back_populates="staging_customers")
 
 
-class StagingReceivable(Base):
+class StagingReceivable(Base, TimestampMixin):
     __tablename__ = "staging_receivables"
-    __table_args__ = (
-        UniqueConstraint("upload_batch_id", "row_number", name="uq_staging_receivables_batch_row"),
-        Index("ix_staging_receivables_company_batch", "company_id", "upload_batch_id"),
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    upload_batch_id: Mapped[int] = mapped_column(ForeignKey("upload_batches.id"), index=True, nullable=False)
+    row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    customer_external_code: Mapped[str | None] = mapped_column(String(120), index=True)
+    customer_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_customer_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    customer_document_number: Mapped[str | None] = mapped_column(String(20), index=True)
+    receivable_number: Mapped[str | None] = mapped_column(String(120), index=True)
+    nosso_numero: Mapped[str | None] = mapped_column(String(120), index=True)
+    charge_type: Mapped[str | None] = mapped_column(String(120))
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    due_date: Mapped[date | None] = mapped_column(Date, index=True)
+    amount_total: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    balance_amount: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    balance_without_interest: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    status_raw: Mapped[str | None] = mapped_column(String(120))
+    email_billing: Mapped[str | None] = mapped_column(String(255))
+    raw_payload: Mapped[dict | None] = mapped_column(JSON)
+    validation_status: Mapped[ValidationStatusEnum] = mapped_column(
+        Enum(ValidationStatusEnum), default=ValidationStatusEnum.VALID, nullable=False
     )
+    validation_errors: Mapped[list | None] = mapped_column(JSON)
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="CASCADE"), nullable=False, index=True)
-    row_number = Column(Integer, nullable=False)
-    customer_external_code = Column(String(120), nullable=True)
-    customer_name = Column(String(200), nullable=True)
-    normalized_customer_name = Column(String(200), nullable=True, index=True)
-    customer_document_number = Column(String(30), nullable=True)
-    receivable_number = Column(String(120), nullable=True)
-    nosso_numero = Column(String(120), nullable=True, index=True)
-    charge_type = Column(String(50), nullable=True)
-    issue_date = Column(Date, nullable=True)
-    due_date = Column(Date, nullable=True, index=True)
-    amount_total = Column(Numeric(14, 2), nullable=True)
-    balance_amount = Column(Numeric(14, 2), nullable=True)
-    balance_without_interest = Column(Numeric(14, 2), nullable=True)
-    status_raw = Column(String(50), nullable=True)
-    email_billing = Column(String(255), nullable=True)
-    raw_payload = Column(Text, nullable=False, default="{}")
-    validation_status = Column(String(20), nullable=False, default="pending", index=True)
-    validation_errors = Column(Text, nullable=False, default="[]")
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    upload_batch: Mapped["UploadBatch"] = relationship(back_populates="staging_receivables")
+    pendings: Mapped[list["CustomerLinkPending"]] = relationship(back_populates="staging_receivable")
 
 
-class Customer(Base):
+class Customer(Base, TimestampMixin):
     __tablename__ = "customers"
     __table_args__ = (
-        UniqueConstraint("company_id", "external_code", name="uq_customers_company_external_code"),
-        Index("ix_customers_company_name", "company_id", "full_name"),
-        Index("ix_customers_company_document", "company_id", "document_number"),
+        UniqueConstraint("company_id", "external_code", name="uq_customer_company_external_code"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    external_code = Column(String(120), nullable=True)
-    full_name = Column(String(200), nullable=False)
-    normalized_name = Column(String(200), nullable=False, index=True)
-    document_number = Column(String(30), nullable=True)
-    email_billing = Column(String(255), nullable=True, index=True)
-    email_financial = Column(String(255), nullable=True)
-    phone = Column(String(50), nullable=True)
-    other_contacts = Column(Text, nullable=True)
-    is_active = Column(Boolean, nullable=False, default=True, index=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    external_code: Mapped[str | None] = mapped_column(String(120), index=True)
+    full_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    document_number: Mapped[str | None] = mapped_column(String(20), index=True)
+    email_billing: Mapped[str | None] = mapped_column(String(255))
+    email_financial: Mapped[str | None] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    other_contacts: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    receivables = relationship("Receivable", back_populates="customer")
+    company: Mapped["Company"] = relationship(back_populates="customers")
+    receivables: Mapped[list["Receivable"]] = relationship(back_populates="customer")
+    manual_messages: Mapped[list["ManualMessage"]] = relationship(back_populates="customer")
 
 
-class Receivable(Base):
+class Receivable(Base, TimestampMixin):
     __tablename__ = "receivables"
-    __table_args__ = (
-        UniqueConstraint("company_id", "nosso_numero", name="uq_receivables_company_nosso_numero"),
-        Index("ix_receivables_company_customer", "company_id", "customer_id"),
-        Index("ix_receivables_company_status_due", "company_id", "status", "due_date"),
-    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
-    upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="SET NULL"), nullable=True)
-    receivable_number = Column(String(120), nullable=True)
-    nosso_numero = Column(String(120), nullable=True)
-    charge_type = Column(String(50), nullable=True)
-    issue_date = Column(Date, nullable=True)
-    due_date = Column(Date, nullable=False)
-    amount_total = Column(Numeric(14, 2), nullable=False)
-    balance_amount = Column(Numeric(14, 2), nullable=False, default=0)
-    balance_without_interest = Column(Numeric(14, 2), nullable=False, default=0)
-    status = Column(String(30), nullable=False, default="em_aberto", index=True)
-    customer_name_snapshot = Column(String(200), nullable=False)
-    billing_email_snapshot = Column(String(255), nullable=True)
-    document_snapshot = Column(String(30), nullable=True)
-    is_active = Column(Boolean, nullable=False, default=True, index=True)
-    last_standard_message_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), index=True, nullable=False)
+    upload_batch_id: Mapped[int | None] = mapped_column(ForeignKey("upload_batches.id"), index=True)
+    receivable_number: Mapped[str | None] = mapped_column(String(120), index=True)
+    nosso_numero: Mapped[str | None] = mapped_column(String(120), index=True)
+    charge_type: Mapped[str | None] = mapped_column(String(120))
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    due_date: Mapped[date | None] = mapped_column(Date, index=True)
+    amount_total: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    balance_amount: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    balance_without_interest: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    status: Mapped[ReceivableStatusEnum] = mapped_column(Enum(ReceivableStatusEnum), index=True, nullable=False)
+    snapshot_customer_name: Mapped[str | None] = mapped_column(String(255))
+    snapshot_customer_document: Mapped[str | None] = mapped_column(String(20))
+    snapshot_email_billing: Mapped[str | None] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_standard_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    customer = relationship("Customer", back_populates="receivables")
+    company: Mapped["Company"] = relationship(back_populates="receivables")
+    customer: Mapped["Customer"] = relationship(back_populates="receivables")
+    outbox_messages: Mapped[list["OutboxMessage"]] = relationship(back_populates="receivable")
+    history_entries: Mapped[list["ReceivableHistory"]] = relationship(back_populates="receivable")
 
 
-class CustomerLinkPending(Base):
+class CustomerLinkPending(Base, TimestampMixin):
     __tablename__ = "customer_link_pendings"
-    __table_args__ = (
-        Index("ix_customer_link_pending_company_status", "company_id", "status"),
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    upload_batch_id: Mapped[int] = mapped_column(ForeignKey("upload_batches.id"), index=True, nullable=False)
+    staging_receivable_id: Mapped[int] = mapped_column(ForeignKey("staging_receivables.id"), index=True, nullable=False)
+    suggested_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
+    resolved_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
+    status: Mapped[PendingStatusEnum] = mapped_column(
+        Enum(PendingStatusEnum), default=PendingStatusEnum.OPEN, nullable=False
     )
+    note: Mapped[str | None] = mapped_column(Text)
+    resolved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="CASCADE"), nullable=False, index=True)
-    staging_receivable_id = Column(Integer, ForeignKey("staging_receivables.id", ondelete="CASCADE"), nullable=False, unique=True)
-    suggested_customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
-    status = Column(String(20), nullable=False, default="open", index=True)
-    resolution_note = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
-    resolved_at = Column(DateTime(timezone=True), nullable=True)
-    resolved_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    upload_batch: Mapped["UploadBatch"] = relationship(back_populates="pendings")
+    staging_receivable: Mapped["StagingReceivable"] = relationship(back_populates="pendings")
+    suggested_customer: Mapped["Customer"] = relationship(foreign_keys=[suggested_customer_id])
+    resolved_customer: Mapped["Customer"] = relationship(foreign_keys=[resolved_customer_id])
 
 
-class MessageTemplate(Base):
+class MessageTemplate(Base, TimestampMixin):
     __tablename__ = "message_templates"
-    __table_args__ = (
-        Index("ix_message_templates_company_active", "company_id", "is_active"),
-    )
+    __table_args__ = (UniqueConstraint("company_id", name="uq_message_template_company"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    name = Column(String(120), nullable=False)
-    subject_template = Column(String(200), nullable=False)
-    body_template = Column(Text, nullable=False)
-    is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
-class ManualMessage(Base):
+class ManualMessage(Base, TimestampMixin):
     __tablename__ = "manual_messages"
-    __table_args__ = (
-        Index("ix_manual_messages_company_customer", "company_id", "customer_id"),
-    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False, index=True)
-    receivable_id = Column(Integer, ForeignKey("receivables.id", ondelete="SET NULL"), nullable=True, index=True)
-    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
-    subject = Column(String(200), nullable=False)
-    body = Column(Text, nullable=False)
-    recipient_email = Column(String(255), nullable=False)
-    preview_hash = Column(String(64), nullable=False, index=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), index=True, nullable=False)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    recipient_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    preview_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    customer: Mapped["Customer"] = relationship(back_populates="manual_messages")
 
 
-class OutboxMessage(Base):
+class OutboxMessage(Base, TimestampMixin):
     __tablename__ = "outbox_messages"
-    __table_args__ = (
-        UniqueConstraint("company_id", "dedupe_key", name="uq_outbox_company_dedupe"),
-        Index("ix_outbox_company_status", "company_id", "status"),
+    __table_args__ = (UniqueConstraint("company_id", "dedupe_key", name="uq_outbox_company_dedupe"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    receivable_id: Mapped[int | None] = mapped_column(ForeignKey("receivables.id"), index=True)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    message_kind: Mapped[str] = mapped_column(String(50), nullable=False)
+    recipient_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[MessageStatusEnum] = mapped_column(
+        Enum(MessageStatusEnum), default=MessageStatusEnum.PENDING, nullable=False
     )
+    error_message: Mapped[str | None] = mapped_column(Text)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
-    receivable_id = Column(Integer, ForeignKey("receivables.id", ondelete="SET NULL"), nullable=True, index=True)
-    manual_message_id = Column(Integer, ForeignKey("manual_messages.id", ondelete="SET NULL"), nullable=True)
-    template_id = Column(Integer, ForeignKey("message_templates.id", ondelete="SET NULL"), nullable=True)
-    message_kind = Column(String(20), nullable=False)
-    recipient_email = Column(String(255), nullable=False)
-    subject = Column(String(200), nullable=False)
-    body = Column(Text, nullable=False)
-    dedupe_key = Column(String(64), nullable=False)
-    status = Column(String(20), nullable=False, default="queued")
-    error_message = Column(Text, nullable=True)
-    sent_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    receivable: Mapped["Receivable"] = relationship(back_populates="outbox_messages")
 
 
-class ReceivableHistory(Base):
-    __tablename__ = "receivable_histories"
-    __table_args__ = (
-        Index("ix_receivable_histories_company_receivable", "company_id", "receivable_id"),
-    )
+class ReceivableHistory(Base, TimestampMixin):
+    __tablename__ = "receivable_history"
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    receivable_id = Column(Integer, ForeignKey("receivables.id", ondelete="CASCADE"), nullable=False, index=True)
-    event_type = Column(String(40), nullable=False)
-    old_status = Column(String(30), nullable=True)
-    new_status = Column(String(30), nullable=True)
-    note = Column(Text, nullable=True)
-    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
+    receivable_id: Mapped[int] = mapped_column(ForeignKey("receivables.id"), index=True, nullable=False)
+    changed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    old_status: Mapped[str | None] = mapped_column(String(50))
+    new_status: Mapped[str | None] = mapped_column(String(50))
+    note: Mapped[str | None] = mapped_column(Text)
+
+    receivable: Mapped["Receivable"] = relationship(back_populates="history_entries")
 
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
-    __table_args__ = (
-        Index("ix_audit_logs_company_created", "company_id", "created_at"),
-    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    entity_type = Column(String(60), nullable=False)
-    entity_id = Column(String(120), nullable=False)
-    action = Column(String(40), nullable=False)
-    details = Column(Text, nullable=False, default="{}")
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    entity: Mapped[str] = mapped_column(String(100), nullable=False)
+    entity_id: Mapped[str | None] = mapped_column(String(100))
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    details: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -1,0 +1,13 @@
+#batch-details .list-card h3 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+
+#batch-details .list-card p {
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
+#batch-details .button-link {
+  margin-top: 6px;
+}

@@ -3,26 +3,41 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
+from ..config import settings
+
 router = APIRouter(tags=["pages"])
-BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "static"
 
 
-@router.get("/")
-def home_page():
-    return FileResponse(STATIC_DIR / "index.html")
+def _static_file(name: str) -> FileResponse:
+    path = Path(settings.STATIC_DIR) / name
+    return FileResponse(path)
 
 
-@router.get("/clientes")
-def clients_page():
-    return FileResponse(STATIC_DIR / "clients.html")
+@router.get("/", include_in_schema=False)
+def page_index():
+    return _static_file("index.html")
 
 
-@router.get("/cliente")
-def client_page():
-    return FileResponse(STATIC_DIR / "client.html")
+@router.get("/cadastro", include_in_schema=False)
+def page_cadastro():
+    return _static_file("cadastro.html")
 
 
-@router.get("/pendencias")
-def pendings_page():
-    return FileResponse(STATIC_DIR / "pendencias.html")
+@router.get("/clientes", include_in_schema=False)
+def page_clientes():
+    return _static_file("clientes.html")
+
+
+@router.get("/importacao", include_in_schema=False)
+def page_importacao():
+    return _static_file("importacao.html")
+
+
+@router.get("/cliente", include_in_schema=False)
+def page_cliente():
+    return _static_file("cliente.html")
+
+
+@router.get("/pendencias", include_in_schema=False)
+def page_pendencias():
+    return _static_file("pendencias.html")

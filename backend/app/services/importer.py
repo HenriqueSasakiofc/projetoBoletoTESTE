@@ -1,723 +1,1259 @@
+from __future__ import annotations
+
 import hashlib
-import json
+import io
 import re
 import unicodedata
-import zipfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from io import BytesIO
-from uuid import uuid4
 
-from fastapi import HTTPException
-from openpyxl import load_workbook
+import pandas as pd
+from fastapi import HTTPException, UploadFile
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from .. import models
+from ..models import (
+    AuditLog,
+    BatchStatusEnum,
+    Customer,
+    CustomerLinkPending,
+    PendingStatusEnum,
+    Receivable,
+    ReceivableHistory,
+    ReceivableStatusEnum,
+    StagingCustomer,
+    StagingReceivable,
+    UploadBatch,
+    ValidationStatusEnum,
+)
 
-EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
-FORMULA_PREFIXES = ("=", "+", "-", "@")
-CUSTOMER_REQUIRED_HINTS = {"NOME", "CODIGO"}
-RECEIVABLE_REQUIRED_HINTS = {"NOME", "DOCUMENTO", "VENCIMENTO"}
+EMAIL_REGEX = re.compile(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", re.IGNORECASE)
 
 
-def normalize_text(value: str | None) -> str:
-    if not value:
-        return ""
-    value = str(value).strip()
+def _strip_accents(value: str) -> str:
     value = unicodedata.normalize("NFKD", value)
-    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    return "".join(ch for ch in value if not unicodedata.combining(ch))
+
+
+def _slugify(value: str) -> str:
+    value = _strip_accents(str(value or "").strip().lower())
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    return value.strip("_")
+
+
+def normalize_text(value) -> str:
+    if value is None:
+        return ""
+    value = _strip_accents(str(value).strip().lower())
     value = re.sub(r"\s+", " ", value)
-    return value.upper().strip()
+    return value
 
 
-def normalize_digits(value: str | None) -> str | None:
+def sanitize_cell(value):
     if value is None:
         return None
-    digits = re.sub(r"\D", "", str(value))
-    return digits or None
 
-
-def sanitize_cell_value(value):
-    if value is None:
+    if isinstance(value, float) and pd.isna(value):
         return None
+
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+
     if isinstance(value, datetime):
-        return value.date()
+        return value.isoformat()
+
     if isinstance(value, date):
+        return value.isoformat()
+
+    if isinstance(value, Decimal):
+        return str(value)
+
+    if isinstance(value, bool):
         return value
-    if isinstance(value, (int, float, Decimal)):
+
+    if isinstance(value, int):
         return value
+
+    if isinstance(value, float):
+        return float(value)
+
     text = str(value).strip()
     if not text:
         return None
-    left = text.lstrip()
-    if left.startswith(FORMULA_PREFIXES):
+
+    if text.startswith(("=", "+", "-", "@")):
         text = "'" + text
-    return re.sub(r"\s+", " ", text).strip()
+
+    return text
 
 
-def parse_email(value: str | None) -> str | None:
+def sanitize_document(value) -> str | None:
     if not value:
         return None
-    candidate = str(value).replace("mailto:", " ").replace(";", " ").replace(",", " ").strip().split()
-    for item in candidate:
-        item = item.strip().lower()
-        if EMAIL_RE.match(item):
-            return item
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    return digits or None
+
+
+def sanitize_email(value) -> str | None:
+    if not value:
+        return None
+
+    text = str(value).strip().lower()
+    match = EMAIL_REGEX.search(text)
+    if match:
+        return match.group(0)
+
     return None
 
 
-def sha256_bytes(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()
+def sanitize_external_code(value) -> int | None:
+    if value is None:
+        return None
 
+    if isinstance(value, float) and pd.isna(value):
+        return None
 
-def validate_filename(filename: str | None) -> str:
-    safe_name = (filename or "arquivo.xlsx").strip().replace("\\", "/").split("/")[-1]
-    if not safe_name.lower().endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Somente arquivos .xlsx são aceitos")
-    if safe_name.lower().endswith(".xlsm"):
-        raise HTTPException(status_code=400, detail="Arquivos com macro não são aceitos")
-    return safe_name
+    if isinstance(value, bool):
+        return None
 
+    if isinstance(value, int):
+        return value
 
-def validate_upload_content(filename: str, content: bytes) -> None:
-    validate_filename(filename)
-    if not content:
-        raise HTTPException(status_code=400, detail="Arquivo vazio")
-    if len(content) > settings.upload_max_bytes:
-        raise HTTPException(status_code=400, detail="Arquivo excede o tamanho máximo permitido")
-    try:
-        with zipfile.ZipFile(BytesIO(content)) as archive:
-            names = {name.lower() for name in archive.namelist()}
-            if any(name.endswith("vbaproject.bin") for name in names):
-                raise HTTPException(status_code=400, detail="Arquivo com macro não é permitido")
-            if not any(name.endswith("workbook.xml") for name in names):
-                raise HTTPException(status_code=400, detail="Arquivo XLSX inválido")
-    except zipfile.BadZipFile as exc:
-        raise HTTPException(status_code=400, detail="Arquivo XLSX inválido") from exc
+    if isinstance(value, float):
+        try:
+            return int(value)
+        except Exception:
+            return None
 
+    text = str(value).strip()
+    if not text:
+        return None
 
-def workbook_rows(content: bytes):
-    workbook = load_workbook(filename=BytesIO(content), read_only=True, data_only=True)
-    sheet = workbook.active
-    return list(sheet.iter_rows(values_only=True))
+    if text.isdigit():
+        return int(text)
 
-
-def detect_header_row(rows: list[tuple], required_hints: set[str]) -> tuple[int, list[str]]:
-    for index, row in enumerate(rows[:8]):
-        headers = [normalize_text(value) for value in row]
-        if required_hints.issubset(set(headers)):
-            return index, [str(value).strip() if value is not None else "" for value in row]
-    raise HTTPException(status_code=400, detail="Cabeçalho da planilha não reconhecido")
-
-
-def rows_to_dicts(rows: list[tuple], required_hints: set[str]) -> list[tuple[int, dict[str, object]]]:
-    header_index, header = detect_header_row(rows, required_hints)
-    output: list[tuple[int, dict[str, object]]] = []
-    for row_number, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
-        data = {}
-        if not any(value not in (None, "") for value in row):
-            continue
-        for col_index, col_name in enumerate(header):
-            if not col_name:
-                continue
-            data[col_name] = sanitize_cell_value(row[col_index] if col_index < len(row) else None)
-        output.append((row_number, data))
-    return output
+    return None
 
 
 def parse_decimal(value) -> Decimal | None:
     if value is None or value == "":
         return None
+
+    if isinstance(value, Decimal):
+        return value.quantize(Decimal("0.01"))
+
+    if isinstance(value, int):
+        return Decimal(str(value)).quantize(Decimal("0.01"))
+
+    if isinstance(value, float):
+        if pd.isna(value):
+            return None
+        return Decimal(str(value)).quantize(Decimal("0.01"))
+
+    text = str(value).strip().replace("R$", "").replace(" ", "")
+
+    if "," in text and "." in text:
+        text = text.replace(".", "").replace(",", ".")
+    else:
+        text = text.replace(",", ".")
+
     try:
-        if isinstance(value, Decimal):
-            return value.quantize(Decimal("0.01"))
-        text = str(value).replace("R$", "").replace(".", "").replace(",", ".").strip()
         return Decimal(text).quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
         return None
 
 
-def parse_date(value) -> date | None:
-    if value is None:
+def parse_date_value(value) -> date | None:
+    if value is None or value == "":
         return None
+
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+
     if isinstance(value, datetime):
         return value.date()
-    if isinstance(value, date):
-        return value
+
     text = str(value).strip()
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y"):
         try:
             return datetime.strptime(text, fmt).date()
         except ValueError:
-            continue
+            pass
+
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.date()
+
+
+def hash_bytes(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def validate_upload_file(upload: UploadFile, max_size_mb: int) -> bytes:
+    filename = (upload.filename or "").lower().strip()
+
+    if not filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Somente arquivos .xlsx são aceitos.")
+
+    if filename.endswith(".xlsm"):
+        raise HTTPException(status_code=400, detail="Arquivos com macro não são permitidos.")
+
+    content = upload.file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail=f"Arquivo {upload.filename} está vazio.")
+
+    max_size = max_size_mb * 1024 * 1024
+    if len(content) > max_size:
+        raise HTTPException(status_code=400, detail="Arquivo excede o tamanho máximo permitido.")
+
+    if b"vbaProject.bin" in content:
+        raise HTTPException(status_code=400, detail="Arquivo com macro detectado e bloqueado.")
+
+    return content
+
+
+def _deduplicate_headers(headers: list[str]) -> list[str]:
+    counts: dict[str, int] = {}
+    result: list[str] = []
+
+    for raw in headers:
+        header = str(raw or "").strip()
+        if not header:
+            header = "coluna"
+
+        count = counts.get(header, 0)
+        if count == 0:
+            result.append(header)
+        else:
+            result.append(f"{header}_{count + 1}")
+
+        counts[header] = count + 1
+
+    return result
+
+
+def _looks_like_exported_header_row(df: pd.DataFrame) -> bool:
+    if df.empty:
+        return False
+
+    column_names = [str(col).strip() for col in df.columns]
+    first_row = df.iloc[0].tolist()
+
+    generic_columns = sum(
+        1
+        for col in column_names
+        if col.lower().startswith("unnamed:") or not col.strip()
+    )
+
+    text_cells = sum(
+        1
+        for value in first_row
+        if isinstance(value, str) and value.strip()
+    )
+
+    return generic_columns >= max(2, len(column_names) // 2) and text_cells >= max(2, len(column_names) // 2)
+
+
+def _promote_first_row_to_header(df: pd.DataFrame) -> pd.DataFrame:
+    raw_headers = [sanitize_cell(value) or f"coluna_{idx + 1}" for idx, value in enumerate(df.iloc[0].tolist())]
+    headers = _deduplicate_headers([str(value) for value in raw_headers])
+
+    df = df.iloc[1:].copy()
+    df.columns = headers
+    df.reset_index(drop=True, inplace=True)
+    return df
+
+
+def _read_excel_as_records(content: bytes) -> tuple[list[dict], int]:
+    df = pd.read_excel(io.BytesIO(content), dtype=object)
+    df.columns = [str(col).strip() for col in df.columns]
+
+    start_row = 2
+    if _looks_like_exported_header_row(df):
+        df = _promote_first_row_to_header(df)
+        start_row = 3
+
+    records = df.to_dict(orient="records")
+    cleaned: list[dict] = []
+
+    for row in records:
+        cleaned_row: dict[str, object] = {}
+        for key, value in row.items():
+            cleaned_row[str(key).strip()] = sanitize_cell(value)
+        cleaned.append(cleaned_row)
+
+    return cleaned, start_row
+
+
+def _pick_value(row: dict, aliases: list[str]):
+    normalized = {_slugify(k): v for k, v in row.items()}
+    for alias in aliases:
+        alias_key = _slugify(alias)
+        if alias_key in normalized:
+            return normalized[alias_key]
     return None
 
 
-def safe_json(data: dict) -> str:
-    def default(obj):
-        if isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-        if isinstance(obj, Decimal):
-            return str(obj)
-        return str(obj)
-
-    return json.dumps(data, ensure_ascii=False, default=default)
+def _row_contains_export_footer(row: dict) -> bool:
+    joined = " ".join(str(v) for v in row.values() if v is not None).lower()
+    return "gerado em" in joined
 
 
-def normalize_receivable_status(raw: str | None, due_date: date | None, balance_amount: Decimal | None) -> str:
-    normalized = normalize_text(raw)
-    if normalized in {"PAGO", "PAGO PARCIAL", "QUITADO"} or (balance_amount is not None and balance_amount <= 0):
-        return "pago"
-    if normalized in {"CANCELADO", "BAIXADO"}:
-        return "cancelado"
-    if not due_date:
-        return "em_aberto"
+def _map_customer_row(row: dict, row_number: int) -> dict:
+    full_name = _pick_value(
+        row,
+        [
+            "nome",
+            "nome_cliente",
+            "cliente",
+            "razao_social",
+            "razao social",
+            "full_name",
+        ],
+    )
+    external_code = _pick_value(
+        row,
+        [
+            "codigo",
+            "código",
+            "codigo_cliente",
+            "cod_cliente",
+            "id_cliente",
+            "external_code",
+        ],
+    )
+    document_number = _pick_value(
+        row,
+        [
+            "cpf",
+            "cnpj",
+            "cpf_cnpj",
+            "cnpj_cpf",
+            "cpf/cnpj",
+            "cnpj/cpf",
+            "documento",
+            "document_number",
+        ],
+    )
+    email_billing = _pick_value(
+        row,
+        [
+            "email_para_cobranca",
+            "email para cobranca",
+            "email para cobrança",
+            "email_cobranca",
+            "email de cobranca",
+            "email de cobrança",
+            "email_do_faturamento",
+            "email do faturamento",
+            "email_do_financeiro",
+            "email do financeiro",
+            "email",
+            "e_mail",
+            "email_billing",
+        ],
+    )
+    email_financial = _pick_value(
+        row,
+        [
+            "email_financeiro",
+            "email do financeiro",
+            "email_do_financeiro",
+            "email do faturamento",
+            "email_do_faturamento",
+            "email_financial",
+        ],
+    )
+    phone = _pick_value(row, ["telefone", "celular", "phone"])
+    other_contacts = _pick_value(
+        row,
+        [
+            "outros_contatos",
+            "other_contacts",
+            "contatos",
+            "email_do_comprador",
+            "email do comprador",
+        ],
+    )
+
+    full_name = sanitize_cell(full_name)
+    external_code = sanitize_external_code(external_code)
+    document_number = sanitize_document(document_number)
+    email_billing = sanitize_email(email_billing)
+    email_financial = sanitize_email(email_financial)
+    phone = sanitize_cell(phone)
+    other_contacts = sanitize_cell(other_contacts)
+
+    errors = []
+    if not full_name:
+        errors.append("Nome do cliente não encontrado.")
+
+    return {
+        "row_number": row_number,
+        "external_code": external_code,
+        "full_name": str(full_name or ""),
+        "normalized_name": normalize_text(full_name),
+        "document_number": document_number,
+        "email_billing": email_billing,
+        "email_financial": email_financial,
+        "phone": phone,
+        "other_contacts": other_contacts,
+        "raw_payload": row,
+        "validation_status": ValidationStatusEnum.INVALID if errors else ValidationStatusEnum.VALID,
+        "validation_errors": errors or None,
+    }
+
+
+def _map_receivable_row(row: dict, row_number: int) -> dict:
+    customer_external_code = _pick_value(
+        row,
+        [
+            "codigo_cliente",
+            "cod_cliente",
+            "id_cliente",
+            "codigo",
+            "código",
+            "customer_external_code",
+        ],
+    )
+    customer_name = _pick_value(
+        row,
+        [
+            "nome",
+            "nome_cliente",
+            "cliente",
+            "sacado",
+            "razao_social",
+            "razao social",
+            "customer_name",
+        ],
+    )
+    customer_document_number = _pick_value(
+        row,
+        [
+            "cpf",
+            "cnpj",
+            "cpf_cnpj",
+            "cnpj_cpf",
+            "cpf/cnpj",
+            "cnpj/cpf",
+            "documento_cliente",
+            "customer_document_number",
+        ],
+    )
+    receivable_number = _pick_value(
+        row,
+        [
+            "numero_titulo",
+            "numero titulo",
+            "titulo",
+            "título",
+            "documento",
+            "receivable_number",
+        ],
+    )
+    nosso_numero = _pick_value(
+        row,
+        [
+            "nosso_numero",
+            "nosso numero",
+            "nosso_num",
+        ],
+    )
+    charge_type = _pick_value(
+        row,
+        [
+            "tipo_cobranca",
+            "tipo",
+            "carteira",
+            "charge_type",
+        ],
+    )
+    issue_date = _pick_value(
+        row,
+        [
+            "data_emissao",
+            "emissao",
+            "emissão",
+            "issue_date",
+        ],
+    )
+    due_date = _pick_value(
+        row,
+        [
+            "vencimento",
+            "data_vencimento",
+            "due_date",
+        ],
+    )
+    amount_total = _pick_value(
+        row,
+        [
+            "valor",
+            "valor_total",
+            "amount_total",
+        ],
+    )
+    balance_amount = _pick_value(
+        row,
+        [
+            "saldo",
+            "saldo_atual",
+            "balance_amount",
+        ],
+    )
+    balance_without_interest = _pick_value(
+        row,
+        [
+            "saldo_sem_juros",
+            "saldo sem juros",
+            "saldo sem juros multa",
+            "saldo sem juros/multa",
+            "balance_without_interest",
+        ],
+    )
+    status_raw = _pick_value(
+        row,
+        [
+            "status",
+            "situacao",
+            "situação",
+            "status_raw",
+        ],
+    )
+    email_billing = _pick_value(
+        row,
+        [
+            "email_cobranca",
+            "email para cobranca",
+            "email para cobrança",
+            "email",
+            "email_billing",
+        ],
+    )
+
+    customer_name = sanitize_cell(customer_name)
+    customer_external_code = sanitize_external_code(customer_external_code)
+    customer_document_number = sanitize_document(customer_document_number)
+    receivable_number = sanitize_cell(receivable_number)
+    nosso_numero = sanitize_cell(nosso_numero)
+    charge_type = sanitize_cell(charge_type)
+    issue_date_parsed = parse_date_value(issue_date)
+    due_date_parsed = parse_date_value(due_date)
+    amount_total_parsed = parse_decimal(amount_total)
+    balance_amount_parsed = parse_decimal(balance_amount)
+    balance_without_interest_parsed = parse_decimal(balance_without_interest)
+    status_raw = sanitize_cell(status_raw)
+    email_billing = sanitize_email(email_billing)
+
+    errors = []
+    if not any([customer_name, customer_external_code, customer_document_number]):
+        errors.append("Identificação do cliente da cobrança não encontrada.")
+    if not due_date_parsed:
+        errors.append("Data de vencimento inválida ou ausente.")
+    if amount_total_parsed is None:
+        errors.append("Valor total inválido ou ausente.")
+
+    return {
+        "row_number": row_number,
+        "customer_external_code": customer_external_code,
+        "customer_name": str(customer_name or ""),
+        "normalized_customer_name": normalize_text(customer_name),
+        "customer_document_number": customer_document_number,
+        "receivable_number": receivable_number,
+        "nosso_numero": nosso_numero,
+        "charge_type": charge_type,
+        "issue_date": issue_date_parsed,
+        "due_date": due_date_parsed,
+        "amount_total": amount_total_parsed,
+        "balance_amount": balance_amount_parsed if balance_amount_parsed is not None else amount_total_parsed,
+        "balance_without_interest": (
+            balance_without_interest_parsed
+            if balance_without_interest_parsed is not None
+            else amount_total_parsed
+        ),
+        "status_raw": status_raw,
+        "email_billing": email_billing,
+        "raw_payload": row,
+        "validation_status": ValidationStatusEnum.INVALID if errors else ValidationStatusEnum.VALID,
+        "validation_errors": errors or None,
+    }
+
+
+def _infer_receivable_status(status_raw: str | None, due_date: date | None, balance_amount) -> ReceivableStatusEnum:
+    raw = normalize_text(status_raw)
+
+    if raw in {"pago", "baixado", "quitado", "liquidado"}:
+        return ReceivableStatusEnum.PAGO
+
+    if raw in {"cancelado", "cancelada"}:
+        return ReceivableStatusEnum.CANCELADO
+
+    if balance_amount is not None:
+        try:
+            if Decimal(balance_amount) <= 0:
+                return ReceivableStatusEnum.PAGO
+        except Exception:
+            pass
+
     today = date.today()
+    if not due_date:
+        return ReceivableStatusEnum.EM_ABERTO
+
     if due_date < today:
-        return "inadimplente"
+        return ReceivableStatusEnum.INADIMPLENTE
+
     if (due_date - today).days <= 7:
-        return "vencendo"
-    return "em_aberto"
+        return ReceivableStatusEnum.VENCENDO
+
+    return ReceivableStatusEnum.EM_ABERTO
 
 
-def _customer_validation_errors(payload: dict) -> list[str]:
-    errors: list[str] = []
-    if not payload.get("Nome"):
-        errors.append("Nome é obrigatório")
-    if payload.get("E-mail para cobrança") and not parse_email(payload.get("E-mail para cobrança")):
-        errors.append("E-mail para cobrança inválido")
-    if payload.get("E-mail do financeiro") and not parse_email(payload.get("E-mail do financeiro")):
-        errors.append("E-mail do financeiro inválido")
-    return errors
-
-
-def _receivable_validation_errors(payload: dict) -> list[str]:
-    errors: list[str] = []
-    if not payload.get("Nome"):
-        errors.append("Nome do cliente é obrigatório")
-    if not payload.get("Documento") and not payload.get("Nosso Numero"):
-        errors.append("Documento ou Nosso Numero é obrigatório")
-    if not parse_date(payload.get("Vencimento")):
-        errors.append("Vencimento inválido")
-    if parse_decimal(payload.get("Valor")) is None:
-        errors.append("Valor inválido")
-    return errors
-
-
-def _clear_batch_staging(db: Session, batch_id: int) -> None:
-    db.query(models.CustomerLinkPending).filter(models.CustomerLinkPending.upload_batch_id == batch_id).delete()
-    db.query(models.StagingReceivable).filter(models.StagingReceivable.upload_batch_id == batch_id).delete()
-    db.query(models.StagingCustomer).filter(models.StagingCustomer.upload_batch_id == batch_id).delete()
-
-
-def create_upload_batch(
+def _find_secure_customer_in_db(
     db: Session,
-    *,
-    user: models.User,
-    clients_filename: str,
-    clients_bytes: bytes,
-    receivables_filename: str,
-    receivables_bytes: bytes,
-) -> models.UploadBatch:
-    validate_upload_content(clients_filename, clients_bytes)
-    validate_upload_content(receivables_filename, receivables_bytes)
+    company_id: int,
+    external_code: int | None,
+    document_number: str | None,
+) -> Customer | None:
+    conditions = []
 
-    batch = models.UploadBatch(
-        company_id=user.company_id,
-        uploaded_by_user_id=user.id,
-        batch_reference=uuid4().hex,
-        clients_filename=validate_filename(clients_filename),
-        receivables_filename=validate_filename(receivables_filename),
-        clients_file_hash=sha256_bytes(clients_bytes),
-        receivables_file_hash=sha256_bytes(receivables_bytes),
-        status="uploaded",
+    if external_code is not None:
+        conditions.append(and_(Customer.company_id == company_id, Customer.external_code == external_code))
+
+    if document_number:
+        conditions.append(and_(Customer.company_id == company_id, Customer.document_number == document_number))
+
+    if not conditions:
+        return None
+
+    for condition in conditions:
+        customer = db.execute(select(Customer).where(condition)).scalar_one_or_none()
+        if customer:
+            return customer
+
+    return None
+
+
+def _find_secure_customer_in_staging(
+    staging_customers: list[StagingCustomer],
+    external_code: int | None,
+    document_number: str | None,
+) -> StagingCustomer | None:
+    for customer in staging_customers:
+        if customer.validation_status != ValidationStatusEnum.VALID:
+            continue
+        if external_code is not None and customer.external_code is not None and customer.external_code == external_code:
+            return customer
+        if document_number and customer.document_number and customer.document_number == document_number:
+            return customer
+    return None
+
+
+def _find_name_suggestion(
+    db: Session,
+    company_id: int,
+    normalized_name: str,
+) -> Customer | None:
+    if not normalized_name:
+        return None
+
+    rows = db.execute(
+        select(Customer).where(
+            Customer.company_id == company_id,
+            Customer.normalized_name == normalized_name,
+        )
+    ).scalars().all()
+
+    if len(rows) == 1:
+        return rows[0]
+    return None
+
+
+def _create_audit_log(
+    db: Session,
+    company_id: int | None,
+    user_id: int | None,
+    entity: str,
+    entity_id: str | None,
+    action: str,
+    details: dict | None = None,
+):
+    db.add(
+        AuditLog(
+            company_id=company_id,
+            user_id=user_id,
+            entity=entity,
+            entity_id=entity_id,
+            action=action,
+            details=details or {},
+        )
+    )
+
+
+async def create_upload_batch_from_files(
+    db: Session,
+    company_id: int,
+    uploaded_by_user_id: int,
+    customers_upload: UploadFile,
+    receivables_upload: UploadFile,
+) -> UploadBatch:
+    customers_content = validate_upload_file(customers_upload, settings.MAX_UPLOAD_SIZE_MB)
+    receivables_content = validate_upload_file(receivables_upload, settings.MAX_UPLOAD_SIZE_MB)
+
+    customers_records, customers_start_row = _read_excel_as_records(customers_content)
+    receivables_records, receivables_start_row = _read_excel_as_records(receivables_content)
+
+    batch = UploadBatch(
+        company_id=company_id,
+        uploaded_by_user_id=uploaded_by_user_id,
+        customers_filename=customers_upload.filename or "clientes.xlsx",
+        receivables_filename=receivables_upload.filename or "contas_receber.xlsx",
+        customers_hash=hash_bytes(customers_content),
+        receivables_hash=hash_bytes(receivables_content),
+        status=BatchStatusEnum.PROCESSING,
     )
     db.add(batch)
     db.flush()
 
-    stage_batch_files(db, batch, clients_bytes, receivables_bytes)
+    staging_customers: list[StagingCustomer] = []
+    staging_receivables: list[StagingReceivable] = []
+
+    invalid_customers = 0
+    invalid_receivables = 0
+
+    for idx, row in enumerate(customers_records, start=customers_start_row):
+        if _row_contains_export_footer(row):
+            continue
+
+        mapped = _map_customer_row(row, idx)
+
+        if not any(
+            [
+                mapped.get("external_code"),
+                mapped.get("full_name"),
+                mapped.get("document_number"),
+                mapped.get("email_billing"),
+                mapped.get("email_financial"),
+                mapped.get("phone"),
+                mapped.get("other_contacts"),
+            ]
+        ):
+            continue
+
+        staging = StagingCustomer(
+            company_id=company_id,
+            upload_batch_id=batch.id,
+            **mapped,
+        )
+        if staging.validation_status == ValidationStatusEnum.INVALID:
+            invalid_customers += 1
+        db.add(staging)
+        staging_customers.append(staging)
+
+    db.flush()
+
+    for idx, row in enumerate(receivables_records, start=receivables_start_row):
+        if _row_contains_export_footer(row):
+            continue
+
+        mapped = _map_receivable_row(row, idx)
+
+        if not any(
+            [
+                mapped.get("customer_external_code"),
+                mapped.get("customer_name"),
+                mapped.get("customer_document_number"),
+                mapped.get("receivable_number"),
+                mapped.get("nosso_numero"),
+                mapped.get("due_date"),
+                mapped.get("amount_total"),
+            ]
+        ):
+            continue
+
+        staging = StagingReceivable(
+            company_id=company_id,
+            upload_batch_id=batch.id,
+            **mapped,
+        )
+        if staging.validation_status == ValidationStatusEnum.INVALID:
+            invalid_receivables += 1
+        db.add(staging)
+        staging_receivables.append(staging)
+
+    db.flush()
+
+    pending_count = 0
+
+    for staging in staging_receivables:
+        if staging.validation_status == ValidationStatusEnum.INVALID:
+            continue
+
+        secure_db_customer = _find_secure_customer_in_db(
+            db=db,
+            company_id=company_id,
+            external_code=staging.customer_external_code,
+            document_number=staging.customer_document_number,
+        )
+
+        secure_staging_customer = _find_secure_customer_in_staging(
+            staging_customers=staging_customers,
+            external_code=staging.customer_external_code,
+            document_number=staging.customer_document_number,
+        )
+
+        if secure_db_customer or secure_staging_customer:
+            continue
+
+        suggested = _find_name_suggestion(
+            db=db,
+            company_id=company_id,
+            normalized_name=staging.normalized_customer_name,
+        )
+
+        pending = CustomerLinkPending(
+            company_id=company_id,
+            upload_batch_id=batch.id,
+            staging_receivable_id=staging.id,
+            suggested_customer_id=suggested.id if suggested else None,
+            status=PendingStatusEnum.OPEN,
+            note="Cobrança sem vínculo seguro com cliente. Resolver antes do merge.",
+        )
+        db.add(pending)
+        pending_count += 1
+
+    batch.preview_customers_total = len(staging_customers)
+    batch.preview_receivables_total = len(staging_receivables)
+    batch.preview_invalid_customers = invalid_customers
+    batch.preview_invalid_receivables = invalid_receivables
+    batch.preview_pending_links = pending_count
+    batch.status = BatchStatusEnum.PENDING_REVIEW if pending_count > 0 else BatchStatusEnum.PREVIEW_READY
+
+    _create_audit_log(
+        db=db,
+        company_id=company_id,
+        user_id=uploaded_by_user_id,
+        entity="upload_batch",
+        entity_id=str(batch.id),
+        action="created_preview",
+        details={
+            "customers_total": batch.preview_customers_total,
+            "receivables_total": batch.preview_receivables_total,
+            "invalid_customers": invalid_customers,
+            "invalid_receivables": invalid_receivables,
+            "pending_links": pending_count,
+        },
+    )
+
     db.commit()
     db.refresh(batch)
     return batch
 
 
-def stage_batch_files(db: Session, batch: models.UploadBatch, clients_bytes: bytes, receivables_bytes: bytes) -> None:
-    _clear_batch_staging(db, batch.id)
-
-    customer_rows = rows_to_dicts(workbook_rows(clients_bytes), CUSTOMER_REQUIRED_HINTS)
-    receivable_rows = rows_to_dicts(workbook_rows(receivables_bytes), RECEIVABLE_REQUIRED_HINTS)
-
-    preview_errors: list[str] = []
-    valid_customer_rows = 0
-    valid_receivable_rows = 0
-
-    customer_docs: set[str] = set()
-    customer_codes: set[str] = set()
-
-    for row_number, payload in customer_rows:
-        errors = _customer_validation_errors(payload)
-        document = normalize_digits(payload.get("CNPJ/CPF"))
-        external_code = str(payload.get("Código") or "").strip() or None
-        if document and document in customer_docs:
-            errors.append("Documento duplicado na planilha de clientes")
-        if external_code and external_code in customer_codes:
-            errors.append("Código duplicado na planilha de clientes")
-        if document:
-            customer_docs.add(document)
-        if external_code:
-            customer_codes.add(external_code)
-        validation_status = "valid" if not errors else "invalid"
-        if not errors:
-            valid_customer_rows += 1
-        db.add(
-            models.StagingCustomer(
-                company_id=batch.company_id,
-                upload_batch_id=batch.id,
-                row_number=row_number,
-                external_code=external_code,
-                full_name=str(payload.get("Nome") or "").strip() or None,
-                normalized_name=normalize_text(payload.get("Nome")),
-                document_number=document,
-                email_billing=parse_email(payload.get("E-mail para cobrança")),
-                email_financial=parse_email(payload.get("E-mail do financeiro")),
-                phone=str(payload.get("Telefone") or "").strip() or None,
-                other_contacts=str(payload.get("Outros contatos") or "").strip() or None,
-                raw_payload=safe_json(payload),
-                validation_status=validation_status,
-                validation_errors=safe_json(errors),
-            )
+def resolve_pending_with_existing_customer(
+    db: Session,
+    pending: CustomerLinkPending,
+    customer_id: int,
+    current_user,
+) -> CustomerLinkPending:
+    customer = db.execute(
+        select(Customer).where(
+            Customer.id == customer_id,
+            Customer.company_id == current_user.company_id,
         )
+    ).scalar_one_or_none()
 
-    db.flush()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado para vinculação.")
 
-    customer_stage_rows = (
-        db.query(models.StagingCustomer)
-        .filter(models.StagingCustomer.upload_batch_id == batch.id, models.StagingCustomer.validation_status == "valid")
-        .all()
+    pending.resolved_customer_id = customer.id
+    pending.status = PendingStatusEnum.RESOLVED
+    pending.resolved_by_user_id = current_user.id
+    pending.resolved_at = datetime.utcnow()
+    pending.note = "Pendência resolvida por vinculação manual a cliente existente."
+
+    _create_audit_log(
+        db=db,
+        company_id=current_user.company_id,
+        user_id=current_user.id,
+        entity="customer_link_pending",
+        entity_id=str(pending.id),
+        action="linked_existing_customer",
+        details={"customer_id": customer.id},
     )
-    customer_index_by_code = {row.external_code: row for row in customer_stage_rows if row.external_code}
-    customer_index_by_document = {row.document_number: row for row in customer_stage_rows if row.document_number}
 
-    for row_number, payload in receivable_rows:
-        errors = _receivable_validation_errors(payload)
-        due_date = parse_date(payload.get("Vencimento"))
-        issue_date = parse_date(payload.get("Emissão") or payload.get("Emissao"))
-        amount_total = parse_decimal(payload.get("Valor"))
-        balance = parse_decimal(payload.get("Saldo")) or Decimal("0.00")
-        balance_without_interest = parse_decimal(payload.get("Saldo sem juros")) or balance
-        customer_external_code = str(payload.get("Código") or payload.get("Codigo") or "").strip() or None
-        customer_document = normalize_digits(payload.get("CNPJ/CPF") or payload.get("Documento do cliente"))
-        if customer_external_code is None and customer_document is None:
-            errors.append("Cliente sem código ou documento para vinculação segura")
-
-        validation_status = "valid" if not errors else "invalid"
-        if not errors:
-            valid_receivable_rows += 1
-
-        staging_receivable = models.StagingReceivable(
-            company_id=batch.company_id,
-            upload_batch_id=batch.id,
-            row_number=row_number,
-            customer_external_code=customer_external_code,
-            customer_name=str(payload.get("Nome") or "").strip() or None,
-            normalized_customer_name=normalize_text(payload.get("Nome")),
-            customer_document_number=customer_document,
-            receivable_number=str(payload.get("Documento") or "").strip() or None,
-            nosso_numero=str(payload.get("Nosso Numero") or payload.get("Nosso Número") or "").strip() or None,
-            charge_type=str(payload.get("Tipo de cobrança") or payload.get("Tipo") or "").strip() or None,
-            issue_date=issue_date,
-            due_date=due_date,
-            amount_total=amount_total,
-            balance_amount=balance,
-            balance_without_interest=balance_without_interest,
-            status_raw=str(payload.get("Status") or "").strip() or None,
-            email_billing=parse_email(payload.get("E-mail para cobrança") or payload.get("E-mail")),
-            raw_payload=safe_json(payload),
-            validation_status=validation_status,
-            validation_errors=safe_json(errors),
+    batch = db.execute(select(UploadBatch).where(UploadBatch.id == pending.upload_batch_id)).scalar_one()
+    open_count = db.execute(
+        select(CustomerLinkPending).where(
+            CustomerLinkPending.upload_batch_id == batch.id,
+            CustomerLinkPending.status == PendingStatusEnum.OPEN,
         )
-        db.add(staging_receivable)
-        db.flush()
+    ).scalars().all()
+    batch.preview_pending_links = len(open_count)
+    if batch.preview_pending_links == 0:
+        batch.status = BatchStatusEnum.PREVIEW_READY
 
-        if not errors:
-            matched_stage_customer = None
-            if customer_external_code and customer_external_code in customer_index_by_code:
-                matched_stage_customer = customer_index_by_code[customer_external_code]
-            elif customer_document and customer_document in customer_index_by_document:
-                matched_stage_customer = customer_index_by_document[customer_document]
+    db.commit()
+    db.refresh(pending)
+    return pending
 
-            matched_customer = None
-            if not matched_stage_customer:
-                if customer_external_code:
-                    matched_customer = (
-                        db.query(models.Customer)
-                        .filter(
-                            models.Customer.company_id == batch.company_id,
-                            models.Customer.external_code == customer_external_code,
-                            models.Customer.is_active.is_(True),
-                        )
-                        .first()
-                    )
-                if not matched_customer and customer_document:
-                    matched_customer = (
-                        db.query(models.Customer)
-                        .filter(
-                            models.Customer.company_id == batch.company_id,
-                            models.Customer.document_number == customer_document,
-                            models.Customer.is_active.is_(True),
-                        )
-                        .first()
-                    )
 
-            if not matched_stage_customer and not matched_customer:
-                db.add(
-                    models.CustomerLinkPending(
-                        company_id=batch.company_id,
-                        upload_batch_id=batch.id,
-                        staging_receivable_id=staging_receivable.id,
-                        status="open",
-                    )
-                )
+def resolve_pending_with_new_customer(
+    db: Session,
+    pending: CustomerLinkPending,
+    payload,
+    current_user,
+) -> CustomerLinkPending:
+    full_name = (payload.full_name or "").strip()
+    if not full_name:
+        raise HTTPException(status_code=400, detail="Nome do cliente é obrigatório.")
 
-    invalid_count = (
-        db.query(models.StagingCustomer)
-        .filter(models.StagingCustomer.upload_batch_id == batch.id, models.StagingCustomer.validation_status == "invalid")
-        .count()
-        + db.query(models.StagingReceivable)
-        .filter(models.StagingReceivable.upload_batch_id == batch.id, models.StagingReceivable.validation_status == "invalid")
-        .count()
+    document_number = sanitize_document(payload.document_number)
+    existing = _find_secure_customer_in_db(
+        db=db,
+        company_id=current_user.company_id,
+        external_code=None,
+        document_number=document_number,
     )
-    pending_count = (
-        db.query(models.CustomerLinkPending)
-        .filter(models.CustomerLinkPending.upload_batch_id == batch.id, models.CustomerLinkPending.status == "open")
-        .count()
-    )
-    batch.preview_total_customers = len(customer_rows)
-    batch.preview_total_receivables = len(receivable_rows)
-    batch.preview_total_pending_links = pending_count
-    batch.preview_total_errors = invalid_count
-    batch.status = "preview_ready"
-    batch.updated_at = datetime.now(timezone.utc)
-    if not customer_rows:
-        preview_errors.append("Planilha de clientes sem linhas válidas")
-    if not receivable_rows:
-        preview_errors.append("Planilha de contas a receber sem linhas válidas")
-    if preview_errors:
-        batch.preview_total_errors += len(preview_errors)
-
-
-def get_batch_preview(db: Session, batch: models.UploadBatch) -> dict:
-    valid_customer_rows = (
-        db.query(models.StagingCustomer)
-        .filter(models.StagingCustomer.upload_batch_id == batch.id, models.StagingCustomer.validation_status == "valid")
-        .count()
-    )
-    valid_receivable_rows = (
-        db.query(models.StagingReceivable)
-        .filter(models.StagingReceivable.upload_batch_id == batch.id, models.StagingReceivable.validation_status == "valid")
-        .count()
-    )
-    pending_links = (
-        db.query(models.CustomerLinkPending)
-        .filter(models.CustomerLinkPending.upload_batch_id == batch.id, models.CustomerLinkPending.status == "open")
-        .count()
-    )
-    errors = []
-    if batch.preview_total_errors:
-        errors.append("Há linhas inválidas no lote")
-    if pending_links:
-        errors.append("Há pendências de vinculação manual")
-    return {
-        "batch_id": batch.id,
-        "status": batch.status,
-        "total_customer_rows": batch.preview_total_customers,
-        "total_receivable_rows": batch.preview_total_receivables,
-        "valid_customer_rows": valid_customer_rows,
-        "valid_receivable_rows": valid_receivable_rows,
-        "pending_links": pending_links,
-        "errors": errors,
-    }
-
-
-def _upsert_customer_from_staging(db: Session, company_id: int, row: models.StagingCustomer) -> models.Customer:
-    customer = None
-    if row.external_code:
-        customer = (
-            db.query(models.Customer)
-            .filter(models.Customer.company_id == company_id, models.Customer.external_code == row.external_code)
-            .first()
-        )
-    if not customer and row.document_number:
-        customer = (
-            db.query(models.Customer)
-            .filter(models.Customer.company_id == company_id, models.Customer.document_number == row.document_number)
-            .first()
-        )
-    if customer:
-        customer.full_name = row.full_name or customer.full_name
-        customer.normalized_name = row.normalized_name or customer.normalized_name
-        customer.document_number = row.document_number or customer.document_number
-        customer.email_billing = row.email_billing or customer.email_billing
-        customer.email_financial = row.email_financial or customer.email_financial
-        customer.phone = row.phone or customer.phone
-        customer.other_contacts = row.other_contacts or customer.other_contacts
-        customer.is_active = True
-        if row.external_code:
-            customer.external_code = row.external_code
+    if existing:
+        pending.resolved_customer_id = existing.id
+        pending.status = PendingStatusEnum.RESOLVED
+        pending.resolved_by_user_id = current_user.id
+        pending.resolved_at = datetime.utcnow()
+        pending.note = "Pendência resolvida utilizando cliente já existente com mesmo documento."
     else:
-        customer = models.Customer(
-            company_id=company_id,
-            external_code=row.external_code,
-            full_name=row.full_name or "Cliente sem nome",
-            normalized_name=row.normalized_name or normalize_text(row.full_name),
-            document_number=row.document_number,
-            email_billing=row.email_billing,
-            email_financial=row.email_financial,
-            phone=row.phone,
-            other_contacts=row.other_contacts,
+        customer = Customer(
+            company_id=current_user.company_id,
+            external_code=None,
+            full_name=full_name,
+            normalized_name=normalize_text(full_name),
+            document_number=document_number,
+            email_billing=sanitize_email(payload.email_billing),
+            email_financial=sanitize_email(payload.email_financial),
+            phone=sanitize_cell(payload.phone),
+            other_contacts=sanitize_cell(payload.other_contacts),
             is_active=True,
         )
         db.add(customer)
         db.flush()
+
+        pending.resolved_customer_id = customer.id
+        pending.status = PendingStatusEnum.RESOLVED
+        pending.resolved_by_user_id = current_user.id
+        pending.resolved_at = datetime.utcnow()
+        pending.note = "Pendência resolvida por criação manual de cliente."
+
+    _create_audit_log(
+        db=db,
+        company_id=current_user.company_id,
+        user_id=current_user.id,
+        entity="customer_link_pending",
+        entity_id=str(pending.id),
+        action="created_or_linked_customer_from_pending",
+        details={"resolved_customer_id": pending.resolved_customer_id},
+    )
+
+    batch = db.execute(select(UploadBatch).where(UploadBatch.id == pending.upload_batch_id)).scalar_one()
+    open_count = db.execute(
+        select(CustomerLinkPending).where(
+            CustomerLinkPending.upload_batch_id == batch.id,
+            CustomerLinkPending.status == PendingStatusEnum.OPEN,
+        )
+    ).scalars().all()
+    batch.preview_pending_links = len(open_count)
+    if batch.preview_pending_links == 0:
+        batch.status = BatchStatusEnum.PREVIEW_READY
+
+    db.commit()
+    db.refresh(pending)
+    return pending
+
+
+def _upsert_customer_from_staging(
+    db: Session,
+    company_id: int,
+    staging: StagingCustomer,
+) -> Customer:
+    customer = None
+
+    if staging.external_code is not None:
+        customer = db.execute(
+            select(Customer).where(
+                Customer.company_id == company_id,
+                Customer.external_code == staging.external_code,
+            )
+        ).scalar_one_or_none()
+
+    if not customer and staging.document_number:
+        customer = db.execute(
+            select(Customer).where(
+                Customer.company_id == company_id,
+                Customer.document_number == staging.document_number,
+            )
+        ).scalar_one_or_none()
+
+    if not customer:
+        customer = Customer(
+            company_id=company_id,
+            external_code=staging.external_code,
+            full_name=staging.full_name,
+            normalized_name=staging.normalized_name,
+            document_number=staging.document_number,
+            email_billing=staging.email_billing,
+            email_financial=staging.email_financial,
+            phone=staging.phone,
+            other_contacts=staging.other_contacts,
+            is_active=True,
+        )
+        db.add(customer)
+        db.flush()
+        return customer
+
+    customer.full_name = staging.full_name
+    customer.normalized_name = staging.normalized_name
+    customer.document_number = staging.document_number
+    customer.email_billing = staging.email_billing
+    customer.email_financial = staging.email_financial
+    customer.phone = staging.phone
+    customer.other_contacts = staging.other_contacts
+    customer.is_active = True
+
+    if staging.external_code is not None:
+        customer.external_code = staging.external_code
+
+    db.flush()
     return customer
 
 
-def merge_batch(db: Session, *, batch: models.UploadBatch, approved_by: models.User) -> None:
-    pending_open = (
-        db.query(models.CustomerLinkPending)
-        .filter(models.CustomerLinkPending.upload_batch_id == batch.id, models.CustomerLinkPending.status == "open")
-        .count()
-    )
-    invalid_rows = (
-        db.query(models.StagingCustomer)
-        .filter(models.StagingCustomer.upload_batch_id == batch.id, models.StagingCustomer.validation_status == "invalid")
-        .count()
-        + db.query(models.StagingReceivable)
-        .filter(models.StagingReceivable.upload_batch_id == batch.id, models.StagingReceivable.validation_status == "invalid")
-        .count()
-    )
-    if pending_open > 0 or invalid_rows > 0:
-        raise HTTPException(status_code=400, detail="Lote possui pendências ou linhas inválidas")
+def _resolve_customer_for_receivable(
+    db: Session,
+    company_id: int,
+    batch: UploadBatch,
+    staging: StagingReceivable,
+) -> Customer:
+    pending = db.execute(
+        select(CustomerLinkPending).where(
+            CustomerLinkPending.upload_batch_id == batch.id,
+            CustomerLinkPending.staging_receivable_id == staging.id,
+        )
+    ).scalar_one_or_none()
 
-    staging_customers = (
-        db.query(models.StagingCustomer)
-        .filter(models.StagingCustomer.upload_batch_id == batch.id, models.StagingCustomer.validation_status == "valid")
-        .all()
-    )
-    customer_ids_touched: list[int] = []
-    for row in staging_customers:
-        customer = _upsert_customer_from_staging(db, batch.company_id, row)
-        customer_ids_touched.append(customer.id)
-
-    db.flush()
-
-    touched_receivables: list[int] = []
-    staging_receivables = (
-        db.query(models.StagingReceivable)
-        .filter(models.StagingReceivable.upload_batch_id == batch.id, models.StagingReceivable.validation_status == "valid")
-        .all()
-    )
-    for row in staging_receivables:
-        customer = None
-        if row.customer_external_code:
-            customer = (
-                db.query(models.Customer)
-                .filter(
-                    models.Customer.company_id == batch.company_id,
-                    models.Customer.external_code == row.customer_external_code,
-                    models.Customer.is_active.is_(True),
-                )
-                .first()
+    if pending:
+        if pending.status != PendingStatusEnum.RESOLVED or not pending.resolved_customer_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Pendência da cobrança na linha {staging.row_number} ainda não foi resolvida.",
             )
-        if not customer and row.customer_document_number:
-            customer = (
-                db.query(models.Customer)
-                .filter(
-                    models.Customer.company_id == batch.company_id,
-                    models.Customer.document_number == row.customer_document_number,
-                    models.Customer.is_active.is_(True),
-                )
-                .first()
+        customer = db.execute(
+            select(Customer).where(
+                Customer.id == pending.resolved_customer_id,
+                Customer.company_id == company_id,
             )
+        ).scalar_one_or_none()
         if not customer:
-            raise HTTPException(status_code=400, detail="Existe cobrança válida sem cliente vinculado")
+            raise HTTPException(status_code=400, detail="Cliente resolvido da pendência não encontrado.")
+        return customer
 
-        receivable = None
-        if row.nosso_numero:
-            receivable = (
-                db.query(models.Receivable)
-                .filter(models.Receivable.company_id == batch.company_id, models.Receivable.nosso_numero == row.nosso_numero)
-                .first()
-            )
-        if not receivable and row.receivable_number and row.due_date:
-            receivable = (
-                db.query(models.Receivable)
-                .filter(
-                    models.Receivable.company_id == batch.company_id,
-                    models.Receivable.receivable_number == row.receivable_number,
-                    models.Receivable.due_date == row.due_date,
-                )
-                .first()
-            )
+    customer = _find_secure_customer_in_db(
+        db=db,
+        company_id=company_id,
+        external_code=staging.customer_external_code,
+        document_number=staging.customer_document_number,
+    )
+    if customer:
+        return customer
 
-        new_status = normalize_receivable_status(row.status_raw, row.due_date, row.balance_amount)
-        if receivable:
-            old_status = receivable.status
-            receivable.customer_id = customer.id
-            receivable.upload_batch_id = batch.id
-            receivable.receivable_number = row.receivable_number
-            receivable.nosso_numero = row.nosso_numero
-            receivable.charge_type = row.charge_type
-            receivable.issue_date = row.issue_date
-            receivable.due_date = row.due_date
-            receivable.amount_total = row.amount_total or Decimal("0.00")
-            receivable.balance_amount = row.balance_amount or Decimal("0.00")
-            receivable.balance_without_interest = row.balance_without_interest or receivable.balance_amount
-            receivable.status = new_status
-            receivable.customer_name_snapshot = customer.full_name
-            receivable.billing_email_snapshot = customer.email_billing
-            receivable.document_snapshot = customer.document_number
-            receivable.is_active = True
-            if old_status != new_status:
-                db.add(
-                    models.ReceivableHistory(
-                        company_id=batch.company_id,
-                        receivable_id=receivable.id,
-                        event_type="status_change",
-                        old_status=old_status,
-                        new_status=new_status,
-                        note="Atualizado pelo merge do lote",
-                        created_by_user_id=approved_by.id,
-                    )
-                )
-        else:
-            receivable = models.Receivable(
-                company_id=batch.company_id,
-                customer_id=customer.id,
-                upload_batch_id=batch.id,
-                receivable_number=row.receivable_number,
-                nosso_numero=row.nosso_numero,
-                charge_type=row.charge_type,
-                issue_date=row.issue_date,
-                due_date=row.due_date,
-                amount_total=row.amount_total or Decimal("0.00"),
-                balance_amount=row.balance_amount or Decimal("0.00"),
-                balance_without_interest=row.balance_without_interest or row.balance_amount or Decimal("0.00"),
-                status=new_status,
-                customer_name_snapshot=customer.full_name,
-                billing_email_snapshot=customer.email_billing,
-                document_snapshot=customer.document_number,
-                is_active=True,
-            )
-            db.add(receivable)
-            db.flush()
-            db.add(
-                models.ReceivableHistory(
-                    company_id=batch.company_id,
-                    receivable_id=receivable.id,
-                    event_type="created",
-                    new_status=new_status,
-                    note="Criado pelo merge do lote",
-                    created_by_user_id=approved_by.id,
-                )
-            )
-        touched_receivables.append(receivable.id)
-
-    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.old_data_inactivation_days)
-    if touched_receivables:
-        db.query(models.Receivable).filter(
-            models.Receivable.company_id == batch.company_id,
-            models.Receivable.is_active.is_(True),
-            ~models.Receivable.id.in_(touched_receivables),
-            models.Receivable.updated_at < cutoff,
-            models.Receivable.status.notin_(["pago", "cancelado"]),
-        ).update({models.Receivable.is_active: False}, synchronize_session=False)
-
-    batch.status = "merged"
-    batch.approved_at = datetime.now(timezone.utc)
-    batch.approved_by_user_id = approved_by.id
-    batch.updated_at = datetime.now(timezone.utc)
-
-    db.add(
-        models.AuditLog(
-            company_id=batch.company_id,
-            user_id=approved_by.id,
-            entity_type="upload_batch",
-            entity_id=str(batch.id),
-            action="merge_approved",
-            details=safe_json({"batch_reference": batch.batch_reference}),
-        )
+    raise HTTPException(
+        status_code=400,
+        detail=f"Não foi possível vincular com segurança a cobrança da linha {staging.row_number}.",
     )
 
 
-def create_customer_from_pending(
+def _upsert_receivable_from_staging(
     db: Session,
-    *,
-    pending: models.CustomerLinkPending,
-    payload: dict,
-    user: models.User,
-) -> models.Customer:
-    customer = models.Customer(
-        company_id=user.company_id,
-        full_name=payload["full_name"].strip(),
-        normalized_name=normalize_text(payload["full_name"]),
-        document_number=normalize_digits(payload.get("document_number")),
-        email_billing=(payload.get("email_billing") or None),
-        email_financial=(payload.get("email_financial") or None),
-        phone=(payload.get("phone") or None),
-        other_contacts=(payload.get("other_contacts") or None),
-        is_active=True,
+    company_id: int,
+    batch: UploadBatch,
+    customer: Customer,
+    staging: StagingReceivable,
+    current_user,
+) -> Receivable:
+    receivable = None
+
+    if staging.nosso_numero:
+        receivable = db.execute(
+            select(Receivable).where(
+                Receivable.company_id == company_id,
+                Receivable.nosso_numero == staging.nosso_numero,
+            )
+        ).scalar_one_or_none()
+
+    if not receivable and staging.receivable_number and staging.due_date:
+        receivable = db.execute(
+            select(Receivable).where(
+                Receivable.company_id == company_id,
+                Receivable.receivable_number == staging.receivable_number,
+                Receivable.due_date == staging.due_date,
+            )
+        ).scalar_one_or_none()
+
+    new_status = _infer_receivable_status(
+        status_raw=staging.status_raw,
+        due_date=staging.due_date,
+        balance_amount=staging.balance_amount,
     )
-    db.add(customer)
+
+    if not receivable:
+        receivable = Receivable(
+            company_id=company_id,
+            customer_id=customer.id,
+            upload_batch_id=batch.id,
+            receivable_number=staging.receivable_number,
+            nosso_numero=staging.nosso_numero,
+            charge_type=staging.charge_type,
+            issue_date=staging.issue_date,
+            due_date=staging.due_date,
+            amount_total=staging.amount_total,
+            balance_amount=staging.balance_amount,
+            balance_without_interest=staging.balance_without_interest,
+            status=new_status,
+            snapshot_customer_name=customer.full_name,
+            snapshot_customer_document=customer.document_number,
+            snapshot_email_billing=staging.email_billing or customer.email_billing,
+            is_active=True,
+        )
+        db.add(receivable)
+        db.flush()
+
+        db.add(
+            ReceivableHistory(
+                company_id=company_id,
+                receivable_id=receivable.id,
+                changed_by_user_id=current_user.id,
+                old_status=None,
+                new_status=new_status.value,
+                note="Cobrança criada por merge de lote.",
+            )
+        )
+        return receivable
+
+    old_status = receivable.status.value if receivable.status else None
+
+    receivable.customer_id = customer.id
+    receivable.upload_batch_id = batch.id
+    receivable.receivable_number = staging.receivable_number
+    receivable.nosso_numero = staging.nosso_numero
+    receivable.charge_type = staging.charge_type
+    receivable.issue_date = staging.issue_date
+    receivable.due_date = staging.due_date
+    receivable.amount_total = staging.amount_total
+    receivable.balance_amount = staging.balance_amount
+    receivable.balance_without_interest = staging.balance_without_interest
+    receivable.status = new_status
+    receivable.snapshot_customer_name = customer.full_name
+    receivable.snapshot_customer_document = customer.document_number
+    receivable.snapshot_email_billing = staging.email_billing or customer.email_billing
+    receivable.is_active = True
+
     db.flush()
-    resolve_pending_with_customer(db, pending=pending, customer=customer, user=user, note="Perfil criado manualmente")
-    return customer
 
-
-def resolve_pending_with_customer(
-    db: Session,
-    *,
-    pending: models.CustomerLinkPending,
-    customer: models.Customer,
-    user: models.User,
-    note: str,
-) -> None:
-    staging = db.query(models.StagingReceivable).filter(models.StagingReceivable.id == pending.staging_receivable_id).first()
-    if not staging:
-        raise HTTPException(status_code=404, detail="Registro de staging não encontrado")
-    if customer.company_id != user.company_id:
-        raise HTTPException(status_code=403, detail="Cliente fora da empresa do usuário")
-    if staging.customer_external_code is None and customer.external_code:
-        staging.customer_external_code = customer.external_code
-    if staging.customer_document_number is None and customer.document_number:
-        staging.customer_document_number = customer.document_number
-    pending.status = "resolved"
-    pending.suggested_customer_id = customer.id
-    pending.resolution_note = note
-    pending.resolved_by_user_id = user.id
-    pending.resolved_at = datetime.now(timezone.utc)
-    db.add(
-        models.AuditLog(
-            company_id=user.company_id,
-            user_id=user.id,
-            entity_type="customer_link_pending",
-            entity_id=str(pending.id),
-            action="resolved",
-            details=safe_json({"customer_id": customer.id, "note": note}),
+    if old_status != new_status.value:
+        db.add(
+            ReceivableHistory(
+                company_id=company_id,
+                receivable_id=receivable.id,
+                changed_by_user_id=current_user.id,
+                old_status=old_status,
+                new_status=new_status.value,
+                note="Status atualizado por merge de lote.",
+            )
         )
-    )
+
+    return receivable
 
 
-def cleanup_old_staging(db: Session, company_id: int) -> int:
-    threshold = datetime.now(timezone.utc) - timedelta(days=settings.staging_retention_days)
-    old_batches = db.query(models.UploadBatch).filter(
-        models.UploadBatch.company_id == company_id,
-        models.UploadBatch.created_at < threshold,
-        models.UploadBatch.status.in_(["preview_ready", "merged", "uploaded"]),
+def approve_batch_merge(
+    db: Session,
+    batch: UploadBatch,
+    current_user,
+) -> UploadBatch:
+    if batch.company_id != current_user.company_id:
+        raise HTTPException(status_code=403, detail="Sem permissão para aprovar este lote.")
+
+    open_pendings = db.execute(
+        select(CustomerLinkPending).where(
+            CustomerLinkPending.upload_batch_id == batch.id,
+            CustomerLinkPending.status == PendingStatusEnum.OPEN,
+        )
+    ).scalars().all()
+
+    if open_pendings:
+        raise HTTPException(status_code=400, detail="Ainda existem pendências abertas neste lote.")
+
+    merged_customers = 0
+    merged_receivables = 0
+
+    staging_customers = db.execute(
+        select(StagingCustomer).where(
+            StagingCustomer.upload_batch_id == batch.id,
+            StagingCustomer.validation_status == ValidationStatusEnum.VALID,
+        )
+    ).scalars().all()
+
+    for staging_customer in staging_customers:
+        _upsert_customer_from_staging(
+            db=db,
+            company_id=batch.company_id,
+            staging=staging_customer,
+        )
+        merged_customers += 1
+
+    db.flush()
+
+    staging_receivables = db.execute(
+        select(StagingReceivable).where(
+            StagingReceivable.upload_batch_id == batch.id,
+            StagingReceivable.validation_status == ValidationStatusEnum.VALID,
+        )
+    ).scalars().all()
+
+    for staging_receivable in staging_receivables:
+        customer = _resolve_customer_for_receivable(
+            db=db,
+            company_id=batch.company_id,
+            batch=batch,
+            staging=staging_receivable,
+        )
+        _upsert_receivable_from_staging(
+            db=db,
+            company_id=batch.company_id,
+            batch=batch,
+            customer=customer,
+            staging=staging_receivable,
+            current_user=current_user,
+        )
+        merged_receivables += 1
+
+    batch.approved_by_user_id = current_user.id
+    batch.status = BatchStatusEnum.MERGED
+    batch.merged_customers_count = merged_customers
+    batch.merged_receivables_count = merged_receivables
+
+    _create_audit_log(
+        db=db,
+        company_id=batch.company_id,
+        user_id=current_user.id,
+        entity="upload_batch",
+        entity_id=str(batch.id),
+        action="approved_merge",
+        details={
+            "merged_customers": merged_customers,
+            "merged_receivables": merged_receivables,
+        },
     )
-    count = 0
-    for batch in old_batches.all():
-        _clear_batch_staging(db, batch.id)
-        count += 1
-    return count
+
+    db.commit()
+    db.refresh(batch)
+    return batch

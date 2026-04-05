@@ -1,0 +1,20 @@
+#clients-list .list-card h3 {
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+
+#clients-list .list-card p {
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
+#clients-list .button-link {
+  min-width: 140px;
+}
+
+#clients-list .stats-column span {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}

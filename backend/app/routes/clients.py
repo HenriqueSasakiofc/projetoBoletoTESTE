@@ -1,215 +1,341 @@
-from datetime import date
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, selectinload
 
-from .. import models, schemas
-from ..dependencies import get_db, require_permission
-from ..services.notifier import mask_document, mask_email, mask_phone
+from ..dependencies import get_current_user, get_db, require_permission
+from ..models import (
+    Customer,
+    MessageStatusEnum,
+    OutboxMessage,
+    Receivable,
+    ReceivableHistory,
+    ReceivableStatusEnum,
+    RoleEnum,
+)
+from ..schemas import (
+    ClientListResponse,
+    CustomerDetail,
+    CustomerSummary,
+    OutboxItem,
+    ReceivableHistoryItem,
+    ReceivableListResponse,
+    ReceivableSummary,
+)
 
 router = APIRouter(prefix="/api", tags=["clients"])
 
 
-def summarize_customer_status(customer: models.Customer) -> tuple[str, int]:
-    active_receivables = [r for r in customer.receivables if r.is_active]
-    if not active_receivables:
-        return "sem_cobranca", 0
-    statuses = {r.status for r in active_receivables}
-    if "inadimplente" in statuses:
-        return "inadimplente", len(active_receivables)
-    if "vencendo" in statuses:
-        return "vencendo", len(active_receivables)
-    if "em_aberto" in statuses:
-        return "em_aberto", len(active_receivables)
-    if all(status == "pago" for status in statuses):
-        return "pago", len(active_receivables)
-    if all(status == "cancelado" for status in statuses):
-        return "cancelado", len(active_receivables)
-    return sorted(statuses)[0], len(active_receivables)
+def mask_document(value: str | None) -> str | None:
+    if not value:
+        return None
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if len(digits) <= 4:
+        return "*" * len(digits)
+    return f"{'*' * (len(digits) - 4)}{digits[-4:]}"
 
 
-@router.get("/clients", response_model=list[schemas.CustomerListItemOut])
+def mask_email(value: str | None) -> str | None:
+    if not value or "@" not in value:
+        return value
+    name, domain = value.split("@", 1)
+    if len(name) <= 2:
+        masked = "*" * len(name)
+    else:
+        masked = name[0] + "*" * (len(name) - 2) + name[-1]
+    return f"{masked}@{domain}"
+
+
+def mask_phone(value: str | None) -> str | None:
+    if not value:
+        return None
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if len(digits) <= 4:
+        return "*" * len(digits)
+    return f"{'*' * (len(digits) - 4)}{digits[-4:]}"
+
+
+def _customer_summary(customer: Customer) -> CustomerSummary:
+    receivables_total = len(customer.receivables)
+    open_receivables_total = len(
+        [r for r in customer.receivables if r.status in {ReceivableStatusEnum.EM_ABERTO, ReceivableStatusEnum.VENCENDO}]
+    )
+    overdue_receivables_total = len(
+        [r for r in customer.receivables if r.status == ReceivableStatusEnum.INADIMPLENTE]
+    )
+
+    return CustomerSummary(
+        id=customer.id,
+        external_code=customer.external_code,
+        full_name=customer.full_name,
+        email_billing=customer.email_billing,
+        email_billing_masked=mask_email(customer.email_billing),
+        document_number_masked=mask_document(customer.document_number),
+        phone_masked=mask_phone(customer.phone),
+        receivables_total=receivables_total,
+        open_receivables_total=open_receivables_total,
+        overdue_receivables_total=overdue_receivables_total,
+    )
+
+
+@router.get(
+    "/clients",
+    response_model=ClientListResponse,
+    dependencies=[Depends(require_permission(RoleEnum.CLIENT_OPERATOR, RoleEnum.AUDITOR, RoleEnum.IMPORTER, RoleEnum.APPROVER, RoleEnum.SENDER))],
+)
 def list_clients(
-    q: str = Query(default="", max_length=200),
-    status_filter: str | None = Query(default=None, alias="status"),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=10, ge=1, le=100),
+    search: str | None = None,
+    status_filter: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
     db: Session = Depends(get_db),
-    user=Depends(require_permission("manage_clients")),
+    current_user=Depends(get_current_user),
 ):
-    query = db.query(models.Customer).filter(models.Customer.company_id == user.company_id, models.Customer.is_active.is_(True))
-    if q:
-        like = f"%{q.strip()}%"
-        query = query.filter(or_(models.Customer.full_name.ilike(like), models.Customer.email_billing.ilike(like)))
-    customers = (
-        query.order_by(models.Customer.full_name.asc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 100:
+        page_size = 20
+
+    stmt = (
+        select(Customer)
+        .where(Customer.company_id == current_user.company_id)
+        .options(selectinload(Customer.receivables))
+        .order_by(Customer.full_name.asc())
     )
-    response = []
-    for customer in customers:
-        current_status, active_count = summarize_customer_status(customer)
-        if status_filter and current_status != status_filter:
-            continue
-        response.append(
-            {
-                "id": customer.id,
-                "full_name": customer.full_name,
-                "email_billing_masked": mask_email(customer.email_billing),
-                "phone_masked": mask_phone(customer.phone),
-                "document_masked": mask_document(customer.document_number),
-                "status": current_status,
-                "active_receivables": active_count,
-            }
-        )
-    return response
 
-
-@router.get("/clients/{customer_id}", response_model=schemas.CustomerProfileOut)
-def get_customer_profile(customer_id: int, db: Session = Depends(get_db), user=Depends(require_permission("manage_clients"))):
-    customer = (
-        db.query(models.Customer)
-        .filter(models.Customer.company_id == user.company_id, models.Customer.id == customer_id, models.Customer.is_active.is_(True))
-        .first()
-    )
-    if not customer:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-
-    current_status, _ = summarize_customer_status(customer)
-    receivables = []
-    receivable_ids = []
-    for item in sorted(customer.receivables, key=lambda r: (r.due_date, r.id), reverse=True):
-        if not item.is_active:
-            continue
-        receivable_ids.append(item.id)
-        receivables.append(
-            {
-                "id": item.id,
-                "customer_id": item.customer_id,
-                "customer_name": item.customer_name_snapshot,
-                "nosso_numero": item.nosso_numero,
-                "due_date": item.due_date,
-                "amount_total": item.amount_total,
-                "balance_amount": item.balance_amount,
-                "status": item.status,
-            }
+    if search:
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Customer.full_name.ilike(like),
+                Customer.external_code.ilike(like),
+                Customer.document_number.ilike(like),
+                Customer.email_billing.ilike(like),
+            )
         )
 
-    histories = (
-        db.query(models.ReceivableHistory)
-        .filter(models.ReceivableHistory.company_id == user.company_id, models.ReceivableHistory.receivable_id.in_(receivable_ids or [-1]))
-        .order_by(models.ReceivableHistory.created_at.desc())
-        .all()
-    )
-    message_history = (
-        db.query(models.OutboxMessage)
-        .filter(models.OutboxMessage.company_id == user.company_id, models.OutboxMessage.customer_id == customer.id)
-        .order_by(models.OutboxMessage.created_at.desc())
-        .all()
-    )
+    customers = list(db.execute(stmt).scalars().unique().all())
 
-    return {
-        "id": customer.id,
-        "full_name": customer.full_name,
-        "email_billing_masked": mask_email(customer.email_billing),
-        "email_financial_masked": mask_email(customer.email_financial),
-        "phone_masked": mask_phone(customer.phone),
-        "document_masked": mask_document(customer.document_number),
-        "other_contacts": customer.other_contacts,
-        "status": current_status,
-        "receivables": receivables,
-        "receivable_history": [
-            {
-                "id": h.id,
-                "receivable_id": h.receivable_id,
-                "event_type": h.event_type,
-                "old_status": h.old_status,
-                "new_status": h.new_status,
-                "note": h.note,
-                "created_at": h.created_at,
-            }
-            for h in histories
-        ],
-        "message_history": [
-            {
-                "id": m.id,
-                "recipient_email_masked": mask_email(m.recipient_email),
-                "subject": m.subject,
-                "status": m.status,
-                "message_kind": m.message_kind,
-                "created_at": m.created_at,
-                "sent_at": m.sent_at,
-            }
-            for m in message_history
-        ],
-    }
-
-
-@router.get("/receivables", response_model=list[schemas.ReceivableListItemOut])
-def list_receivables(
-    status_filter: str | None = Query(default=None, alias="status"),
-    db: Session = Depends(get_db),
-    user=Depends(require_permission("manage_clients")),
-):
-    query = db.query(models.Receivable).filter(models.Receivable.company_id == user.company_id, models.Receivable.is_active.is_(True))
     if status_filter:
-        query = query.filter(models.Receivable.status == status_filter)
-    items = query.order_by(models.Receivable.due_date.asc()).limit(200).all()
-    return [
-        {
-            "id": item.id,
-            "customer_id": item.customer_id,
-            "customer_name": item.customer_name_snapshot,
-            "nosso_numero": item.nosso_numero,
-            "due_date": item.due_date,
-            "amount_total": item.amount_total,
-            "balance_amount": item.balance_amount,
-            "status": item.status,
-        }
-        for item in items
+        wanted = status_filter.strip().lower()
+        filtered: list[Customer] = []
+        for customer in customers:
+            statuses = {r.status.value for r in customer.receivables}
+            if wanted in statuses:
+                filtered.append(customer)
+        customers = filtered
+
+    total = len(customers)
+    start = (page - 1) * page_size
+    end = start + page_size
+    items = [_customer_summary(customer) for customer in customers[start:end]]
+
+    return ClientListResponse(total=total, page=page, page_size=page_size, items=items)
+
+
+@router.get(
+    "/clients/{customer_id}",
+    response_model=CustomerDetail,
+    dependencies=[Depends(require_permission(RoleEnum.CLIENT_OPERATOR, RoleEnum.AUDITOR, RoleEnum.IMPORTER, RoleEnum.APPROVER, RoleEnum.SENDER))],
+)
+def get_client_detail(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    customer = db.execute(
+        select(Customer)
+        .where(
+            Customer.id == customer_id,
+            Customer.company_id == current_user.company_id,
+        )
+        .options(selectinload(Customer.receivables))
+    ).scalar_one_or_none()
+
+    if not customer:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+
+    history_rows = db.execute(
+        select(ReceivableHistory)
+        .join(Receivable, Receivable.id == ReceivableHistory.receivable_id)
+        .where(
+            Receivable.company_id == current_user.company_id,
+            Receivable.customer_id == customer.id,
+        )
+        .order_by(ReceivableHistory.created_at.desc())
+    ).scalars().all()
+
+    message_rows = db.execute(
+        select(OutboxMessage)
+        .where(
+            OutboxMessage.company_id == current_user.company_id,
+            OutboxMessage.customer_id == customer.id,
+        )
+        .order_by(OutboxMessage.created_at.desc())
+    ).scalars().all()
+
+    receivables = [
+        ReceivableSummary(
+            id=r.id,
+            receivable_number=r.receivable_number,
+            nosso_numero=r.nosso_numero,
+            due_date=r.due_date,
+            amount_total=r.amount_total,
+            balance_amount=r.balance_amount,
+            status=r.status.value,
+            snapshot_email_billing=r.snapshot_email_billing,
+            last_standard_message_at=r.last_standard_message_at,
+        )
+        for r in sorted(customer.receivables, key=lambda x: (x.due_date or datetime.now().date()), reverse=True)
     ]
 
-
-@router.post("/receivables/{receivable_id}/mark-paid")
-def mark_paid(
-    receivable_id: int,
-    payload: schemas.MarkPaidIn,
-    db: Session = Depends(get_db),
-    user=Depends(require_permission("manage_clients")),
-):
-    receivable = (
-        db.query(models.Receivable)
-        .filter(models.Receivable.company_id == user.company_id, models.Receivable.id == receivable_id)
-        .first()
-    )
-    if not receivable:
-        raise HTTPException(status_code=404, detail="Título não encontrado")
-    old_status = receivable.status
-    receivable.status = "pago"
-    receivable.balance_amount = 0
-    receivable.balance_without_interest = 0
-    db.add(
-        models.ReceivableHistory(
-            company_id=user.company_id,
-            receivable_id=receivable.id,
-            event_type="status_change",
-            old_status=old_status,
-            new_status="pago",
-            note=f"Baixado manualmente em {(payload.paid_at or date.today()).isoformat()}",
-            created_by_user_id=user.id,
+    history = [
+        ReceivableHistoryItem(
+            id=h.id,
+            old_status=h.old_status,
+            new_status=h.new_status,
+            note=h.note,
+            created_at=h.created_at,
         )
+        for h in history_rows
+    ]
+
+    messages = [
+        OutboxItem(
+            id=m.id,
+            message_kind=m.message_kind,
+            recipient_email=m.recipient_email,
+            subject=m.subject,
+            status=m.status.value,
+            error_message=m.error_message,
+            sent_at=m.sent_at,
+            created_at=m.created_at,
+        )
+        for m in message_rows
+    ]
+
+    return CustomerDetail(
+        id=customer.id,
+        external_code=customer.external_code,
+        full_name=customer.full_name,
+        email_billing=customer.email_billing,
+        email_billing_masked=mask_email(customer.email_billing),
+        email_financial=customer.email_financial,
+        email_financial_masked=mask_email(customer.email_financial),
+        phone=customer.phone,
+        phone_masked=mask_phone(customer.phone),
+        document_number_masked=mask_document(customer.document_number),
+        other_contacts=customer.other_contacts,
+        receivables=receivables,
+        history=history,
+        messages=messages,
     )
+
+
+@router.get(
+    "/receivables",
+    response_model=ReceivableListResponse,
+    dependencies=[Depends(require_permission(RoleEnum.CLIENT_OPERATOR, RoleEnum.AUDITOR, RoleEnum.IMPORTER, RoleEnum.APPROVER, RoleEnum.SENDER))],
+)
+def list_receivables(
+    search: str | None = None,
+    status_filter: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 100:
+        page_size = 20
+
+    stmt = select(Receivable).where(Receivable.company_id == current_user.company_id).order_by(Receivable.due_date.desc())
+
+    if status_filter:
+        stmt = stmt.where(Receivable.status == ReceivableStatusEnum(status_filter))
+
+    if search:
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Receivable.receivable_number.ilike(like),
+                Receivable.nosso_numero.ilike(like),
+                Receivable.snapshot_customer_name.ilike(like),
+                Receivable.snapshot_customer_document.ilike(like),
+            )
+        )
+
+    rows = list(db.execute(stmt).scalars().all())
+    total = len(rows)
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    items = [
+        ReceivableSummary(
+            id=r.id,
+            receivable_number=r.receivable_number,
+            nosso_numero=r.nosso_numero,
+            due_date=r.due_date,
+            amount_total=r.amount_total,
+            balance_amount=r.balance_amount,
+            status=r.status.value,
+            snapshot_email_billing=r.snapshot_email_billing,
+            last_standard_message_at=r.last_standard_message_at,
+        )
+        for r in rows[start:end]
+    ]
+
+    return ReceivableListResponse(total=total, page=page, page_size=page_size, items=items)
+
+
+@router.post(
+    "/receivables/{receivable_id}/mark-paid",
+    response_model=ReceivableSummary,
+    dependencies=[Depends(require_permission(RoleEnum.CLIENT_OPERATOR, RoleEnum.APPROVER))],
+)
+def mark_receivable_paid(
+    receivable_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    receivable = db.execute(
+        select(Receivable).where(
+            Receivable.id == receivable_id,
+            Receivable.company_id == current_user.company_id,
+        )
+    ).scalar_one_or_none()
+
+    if not receivable:
+        raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
+
+    old_status = receivable.status.value
+    receivable.status = ReceivableStatusEnum.PAGO
+    receivable.balance_amount = 0
+    receivable.updated_at = datetime.now(timezone.utc)
+
     db.add(
-        models.AuditLog(
-            company_id=user.company_id,
-            user_id=user.id,
-            entity_type="receivable",
-            entity_id=str(receivable.id),
-            action="mark_paid",
-            details=f'{{"paid_at": "{(payload.paid_at or date.today()).isoformat()}"}}',
+        ReceivableHistory(
+            company_id=current_user.company_id,
+            receivable_id=receivable.id,
+            changed_by_user_id=current_user.id,
+            old_status=old_status,
+            new_status=ReceivableStatusEnum.PAGO.value,
+            note="Cobrança marcada como paga manualmente.",
         )
     )
     db.commit()
-    return {"ok": True, "receivable_id": receivable.id, "status": receivable.status}
+    db.refresh(receivable)
+
+    return ReceivableSummary(
+        id=receivable.id,
+        receivable_number=receivable.receivable_number,
+        nosso_numero=receivable.nosso_numero,
+        due_date=receivable.due_date,
+        amount_total=receivable.amount_total,
+        balance_amount=receivable.balance_amount,
+        status=receivable.status.value,
+        snapshot_email_billing=receivable.snapshot_email_billing,
+        last_standard_message_at=receivable.last_standard_message_at,
+    )

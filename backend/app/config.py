@@ -1,40 +1,41 @@
-import os
-from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def _get_bool(name: str, default: str = "false") -> bool:
-    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    APP_NAME: str = "Projeto Boleto"
+    DATABASE_URL: str = "sqlite:///./boleto.db"
+    SECRET_KEY: str = "change-me"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
+
+    SAFE_MODE: bool = True
+    TEST_EMAIL: str = "teste@example.com"
+
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_NAME: str = "Projeto Boleto"
+    SMTP_FROM_EMAIL: str = "nao-responder@example.com"
+    SMTP_USE_TLS: bool = True
+
+    DEFAULT_COMPANY_NAME: str = "Empresa Padrão"
+    ADMIN_EMAIL: str = "admin@example.com"
+    ADMIN_PASSWORD: str = "123456"
+    MAX_UPLOAD_SIZE_MB: int = 10
+
+    BASE_DIR: Path = Path(__file__).resolve().parent
+    STATIC_DIR: Path = BASE_DIR / "static"
 
 
-@dataclass(frozen=True)
-class Settings:
-    app_name: str = os.getenv("APP_NAME", "Projeto Boleto")
-    app_secret_key: str = os.getenv("APP_SECRET_KEY", "troque-esta-chave-em-producao")
-    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-    access_token_minutes: int = int(os.getenv("ACCESS_TOKEN_MINUTES", "120"))
-
-    database_url: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql+psycopg2://postgres:postgres@localhost:5432/projeto_boleto",
-    )
-
-    smtp_host: str = os.getenv("SMTP_HOST", "")
-    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user: str = os.getenv("SMTP_USER", "")
-    smtp_pass: str = os.getenv("SMTP_PASS", "")
-    smtp_tls: bool = _get_bool("SMTP_TLS", "true")
-    mail_from: str = os.getenv("MAIL_FROM", "")
-    safe_mode: bool = _get_bool("SAFE_MODE", "true")
-    test_email: str = os.getenv("TEST_EMAIL", "")
-
-    upload_max_bytes: int = int(os.getenv("UPLOAD_MAX_BYTES", str(8 * 1024 * 1024)))
-    staging_retention_days: int = int(os.getenv("STAGING_RETENTION_DAYS", "45"))
-    old_data_inactivation_days: int = int(os.getenv("OLD_DATA_INACTIVATION_DAYS", "120"))
-
-    bootstrap_company_name: str = os.getenv("BOOTSTRAP_COMPANY_NAME", "Empresa Inicial")
-    bootstrap_company_slug: str = os.getenv("BOOTSTRAP_COMPANY_SLUG", "empresa-inicial")
-    bootstrap_admin_email: str = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "admin@empresa.local")
-    bootstrap_admin_password: str = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "Troque123!")
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
 
 
-settings = Settings()
+settings = get_settings()
