@@ -31,12 +31,62 @@ class ImportsController {
             $receivableRecords = ImporterService::readExcelAsRecords($receivablesFile);
             ImporterService::processReceivableBatch($companyId, $batchId, $receivableRecords);
 
-            // 3. (SIMULAÇÃO) TRANSFERIR DO STAGING PARA O BANCO OFICIAL E ENFILEIRAR MENSAGENS
-            // Aqui você aprovaria o lote, mas como deseja envio instantâneo mediante a planilha:
+            // 3. TRANSFERIR DO STAGING PARA O BANCO OFICIAL E ENFILEIRAR MENSAGENS
             $queuedCount = 0;
-            $receivablesImportedThisBatch = Receivable::where('upload_batch_id', $batchId)->get();
+            $receivablesImportedThisBatch = \App\Models\StagingReceivable::where('upload_batch_id', $batchId)->get();
 
-            foreach ($receivablesImportedThisBatch as $receivable) {
+            foreach ($receivablesImportedThisBatch as $stagingRec) {
+                $normName = $stagingRec->normalized_customer_name;
+                
+                // Primeiro procura na base oficial
+                $customer = \App\Models\Customer::where('company_id', $companyId)
+                                ->where('normalized_name', $normName)
+                                ->first();
+
+                if (!$customer) {
+                    // Tenta achar no staging importado agora
+                    $stagingCust = \App\Models\StagingCustomer::where('upload_batch_id', $batchId)
+                                        ->where('normalized_name', $normName)
+                                        ->first();
+                    
+                    if ($stagingCust) {
+                        $customer = \App\Models\Customer::create([
+                            'company_id' => $companyId,
+                            'full_name' => $stagingCust->full_name,
+                            'normalized_name' => $stagingCust->normalized_name,
+                            'document_number' => $stagingCust->document_number,
+                            'email_billing' => $stagingCust->email_billing,
+                            'phone' => $stagingCust->phone,
+                            'is_active' => true
+                        ]);
+                    } else {
+                        // Se não encontrou, cria um cliente genérico com o que temos
+                        $customer = \App\Models\Customer::create([
+                            'company_id' => $companyId,
+                            'full_name' => $stagingRec->customer_name,
+                            'normalized_name' => $stagingRec->normalized_customer_name,
+                            'is_active' => true
+                        ]);
+                    }
+                }
+
+                // Cria a Conta a Receber Oficial
+                $receivable = Receivable::create([
+                    'company_id' => $companyId,
+                    'customer_id' => $customer->id,
+                    'upload_batch_id' => $batchId,
+                    'receivable_number' => $stagingRec->receivable_number,
+                    'nosso_numero' => $stagingRec->nosso_numero,
+                    'due_date' => $stagingRec->due_date,
+                    'amount_total' => $stagingRec->amount_total,
+                    'balance_amount' => $stagingRec->amount_total,
+                    'status' => 'EM_ABERTO',
+                    'snapshot_customer_name' => $customer->full_name,
+                    'snapshot_customer_document' => $customer->document_number,
+                    'snapshot_email_billing' => $customer->email_billing,
+                    'is_active' => true
+                ]);
+
                 try {
                     // Coloca na Caixa de Saída garantindo a trava de 24h
                     NotifierService::queueStandardMessage($companyId, $receivable, $userId);
