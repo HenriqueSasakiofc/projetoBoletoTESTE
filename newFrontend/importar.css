@@ -1,0 +1,748 @@
+/* =====================================================
+   IMPORTAR PAGE STYLES
+   Extends base styles from styles.css
+   ===================================================== */
+
+/* ---- Reuse existing CSS variables from styles.css / clientes.css ---- */
+/* All :root and .dark variable definitions come from the base CSS.       */
+/* This file only adds styles unique to the import page.                  */
+
+/* Reset (mirrors clientes.css for page-level consistency) */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-hover: #e2e8f0;
+  --secondary-foreground: #475569;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #e0e7ff;
+  --accent-foreground: #3730a3;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #4f46e5;
+  --radius: 12px;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* Import-specific accent colors */
+  --blue-bg: #eff6ff;
+  --blue-text: #1d4ed8;
+  --blue-border: #bfdbfe;
+  --blue-icon-bg: #dbeafe;
+  --amber-bg: #fffbeb;
+  --amber-text: #b45309;
+  --amber-border: #fde68a;
+  --amber-icon-bg: #fef3c7;
+  --green-bg: #f0fdf4;
+  --green-text: #166534;
+  --green-border: #bbf7d0;
+  --red-bg: #fef2f2;
+  --red-text: #dc2626;
+  --red-border: #fecaca;
+}
+
+.dark {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  --card: #1e293b;
+  --card-foreground: #f1f5f9;
+  --primary: #818cf8;
+  --primary-hover: #a5b4fc;
+  --primary-foreground: #0f172a;
+  --secondary: #334155;
+  --secondary-hover: #475569;
+  --secondary-foreground: #e2e8f0;
+  --muted: #334155;
+  --muted-foreground: #94a3b8;
+  --accent: #312e81;
+  --accent-foreground: #c7d2fe;
+  --border: #334155;
+  --input: #334155;
+  --ring: #818cf8;
+
+  --blue-bg: #1e3a5f;
+  --blue-text: #93c5fd;
+  --blue-border: #1e40af;
+  --blue-icon-bg: #1e3a8a;
+  --amber-bg: #3d2a00;
+  --amber-text: #fcd34d;
+  --amber-border: #78350f;
+  --amber-icon-bg: #451a03;
+  --green-bg: #14532d;
+  --green-text: #86efac;
+  --green-border: #166534;
+  --red-bg: #450a0a;
+  --red-text: #fca5a5;
+  --red-border: #7f1d1d;
+}
+
+html {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* =====================================================
+   HEADER (shared with clientes.css)
+   ===================================================== */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--card);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+}
+
+.header-subtitle {
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Theme Toggle */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.theme-toggle:hover {
+  background-color: var(--secondary);
+  border-color: var(--muted-foreground);
+}
+
+.theme-toggle svg {
+  width: 20px;
+  height: 20px;
+  color: var(--foreground);
+  transition: color 0.2s ease;
+}
+
+.theme-toggle .sun-icon { display: none; }
+.dark .theme-toggle .sun-icon { display: block; }
+.dark .theme-toggle .moon-icon { display: none; }
+
+/* Back Button */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-back:hover {
+  background-color: var(--secondary);
+  border-color: var(--muted-foreground);
+}
+
+.btn-back svg { width: 16px; height: 16px; }
+
+/* =====================================================
+   MAIN CONTAINER
+   ===================================================== */
+.main-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 40px 32px;
+}
+
+/* =====================================================
+   PAGE INTRO
+   ===================================================== */
+.page-intro {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+  padding: 20px 24px;
+  background-color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: background-color 0.3s ease;
+}
+
+.page-intro-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background-color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-intro-icon svg {
+  width: 22px;
+  height: 22px;
+  color: white;
+}
+
+.page-intro-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 4px;
+}
+
+.page-intro-text {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+.page-intro-text strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* =====================================================
+   IMPORT GRID
+   ===================================================== */
+.import-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+/* =====================================================
+   IMPORT CARD
+   ===================================================== */
+.import-card {
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  box-shadow: var(--shadow);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, background-color 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.import-card:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+/* Decorative blobs */
+.import-card-decoration {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), transparent);
+  opacity: 0.04;
+  top: -50px;
+  right: -50px;
+  pointer-events: none;
+}
+
+.import-card-decoration-2 {
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-foreground), transparent);
+  opacity: 0.03;
+  bottom: -30px;
+  left: -30px;
+  pointer-events: none;
+}
+
+/* Card header row */
+.import-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Icon */
+.import-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.import-card-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.import-card-icon--blue {
+  background-color: var(--blue-icon-bg);
+  color: var(--blue-text);
+}
+
+.import-card-icon--amber {
+  background-color: var(--amber-icon-bg);
+  color: var(--amber-text);
+}
+
+/* Badge */
+.import-card-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background-color: var(--blue-bg);
+  color: var(--blue-text);
+  border: 1px solid var(--blue-border);
+}
+
+.import-card-badge--amber {
+  background-color: var(--amber-bg);
+  color: var(--amber-text);
+  border-color: var(--amber-border);
+}
+
+/* Title & Description */
+.import-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+  line-height: 1.3;
+}
+
+.import-card-description {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  line-height: 1.6;
+}
+
+/* =====================================================
+   DROP ZONE
+   ===================================================== */
+.drop-zone {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background-color: var(--secondary);
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drop-zone:hover {
+  border-color: var(--primary);
+  background-color: var(--accent);
+}
+
+.drop-zone:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.drop-zone.drag-over {
+  border-color: var(--primary);
+  background-color: var(--accent);
+  transform: scale(1.01);
+}
+
+.drop-zone.has-file {
+  border-style: solid;
+  border-color: var(--green-border);
+  background-color: var(--green-bg);
+  padding: 20px;
+}
+
+/* Hidden file input overlaid on the drop zone */
+.file-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* Drop Zone Content (idle state) */
+.drop-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  width: 100%;
+}
+
+.drop-zone-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  transition: all 0.25s ease;
+}
+
+.drop-zone-icon svg {
+  width: 22px;
+  height: 22px;
+  color: var(--muted-foreground);
+}
+
+.drop-zone:hover .drop-zone-icon {
+  background-color: var(--accent);
+  border-color: var(--primary);
+}
+
+.drop-zone:hover .drop-zone-icon svg {
+  color: var(--primary);
+}
+
+.drop-zone-text {
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+.drop-zone-link {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.drop-zone-hint {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  opacity: 0.8;
+}
+
+/* Drop Zone Selected (file chosen state) */
+.drop-zone-selected {
+  width: 100%;
+  pointer-events: none;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.file-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background-color: var(--green-bg);
+  border: 1px solid var(--green-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.file-icon svg {
+  width: 20px;
+  height: 20px;
+  color: var(--green-text);
+}
+
+.file-details {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.file-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-size {
+  display: block;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+
+.file-remove {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  pointer-events: all;
+  z-index: 2;
+  position: relative;
+}
+
+.file-remove svg { width: 14px; height: 14px; }
+
+.file-remove:hover {
+  background-color: var(--red-bg);
+  color: var(--red-text);
+  border-color: var(--red-border);
+}
+
+/* =====================================================
+   FEEDBACK MESSAGES
+   ===================================================== */
+.error-msg,
+.success-msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.error-msg svg,
+.success-msg svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.error-msg {
+  background-color: var(--red-bg);
+  color: var(--red-text);
+  border: 1px solid var(--red-border);
+  animation: fadeSlideIn 0.2s ease;
+}
+
+.success-msg {
+  background-color: var(--green-bg);
+  color: var(--green-text);
+  border: 1px solid var(--green-border);
+  animation: fadeSlideIn 0.2s ease;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* =====================================================
+   IMPORT BUTTON
+   ===================================================== */
+.btn-import {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  position: relative;
+  margin-top: auto;
+}
+
+.btn-import svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* Blue variant */
+.btn-import--blue {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-import--blue:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Amber variant */
+.btn-import--amber {
+  background-color: #d97706;
+  color: #ffffff;
+}
+
+.btn-import--amber:hover:not(:disabled) {
+  background-color: #b45309;
+  box-shadow: 0 4px 14px rgba(217, 119, 6, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Disabled state */
+.btn-import:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Active/pressed */
+.btn-import:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Spinner inside button */
+.btn-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* =====================================================
+   INFO BAR
+   ===================================================== */
+.info-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+.info-bar svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--primary);
+  margin-top: 1px;
+}
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+@media (max-width: 768px) {
+  .header {
+    padding: 16px;
+  }
+
+  .header-actions {
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .btn-back span {
+    display: none;
+  }
+
+  .main-container {
+    padding: 20px 16px;
+  }
+
+  .import-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .page-intro {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .import-card {
+    padding: 20px;
+  }
+}

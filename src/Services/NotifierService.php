@@ -63,6 +63,10 @@ class NotifierService {
 
         $recipient = $receivable->snapshot_email_billing ?: $customer->email_billing;
 
+        if (!$recipient || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+            throw new \Exception("Nao existe um e-mail valido para essa cobranca.");
+        }
+
         // VALIDAÇÃO CUSTÓMIZADA: Não enviar email para a mesma pessoa mais de uma vez num período curto (ex: 24 horas)
         // Dessa forma, se você subir a planilha semana que vem cobrando a mesma conta não paga, ele permitirá enviar!
         $yesterday = date('Y-m-d H:i:s', strtotime('-24 hours'));

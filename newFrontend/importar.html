@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Importar Arquivos - Painel de Controle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="importar.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <h1 class="header-title">Importar Arquivos</h1>
+      <p class="header-subtitle">Envie planilhas Excel para atualizar sua base de dados</p>
+    </div>
+    <div class="header-actions">
+      <a href="index.html" class="btn-back">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+        <span>Voltar para Dashboard</span>
+      </a>
+      <button class="theme-toggle" id="themeToggle" aria-label="Alternar tema">
+        <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+        </svg>
+        <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-container">
+
+    <!-- Page Intro -->
+    <div class="page-intro">
+      <div class="page-intro-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </div>
+      <div>
+        <h2 class="page-intro-title">Importação de Dados</h2>
+        <p class="page-intro-text">Selecione o tipo de importação abaixo. Apenas arquivos <strong>.xls</strong> e <strong>.xlsx</strong> são aceitos.</p>
+      </div>
+    </div>
+
+    <!-- Import Cards Grid -->
+    <div class="import-grid">
+
+      <!-- Card A: Clientes -->
+      <div class="import-card" id="cardClientes">
+        <div class="import-card-decoration"></div>
+        <div class="import-card-decoration-2"></div>
+
+        <div class="import-card-header">
+          <div class="import-card-icon import-card-icon--blue">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+            </svg>
+          </div>
+          <div class="import-card-badge">Base de Clientes</div>
+        </div>
+
+        <h3 class="import-card-title">Importar Base de Clientes</h3>
+        <p class="import-card-description">Envie uma planilha Excel com os dados dos clientes da empresa. As colunas esperadas são: nome, email, telefone e status.</p>
+
+        <!-- Drop Zone -->
+        <div class="drop-zone" id="dropZoneClientes" role="button" tabindex="0" aria-label="Área de upload para clientes">
+          <input type="file" id="fileClientes" accept=".xls,.xlsx" class="file-input" aria-label="Selecionar arquivo de clientes">
+          <div class="drop-zone-content" id="dropContentClientes">
+            <div class="drop-zone-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </div>
+            <p class="drop-zone-text"><span class="drop-zone-link">Clique para selecionar</span> ou arraste o arquivo aqui</p>
+            <p class="drop-zone-hint">Formatos aceitos: .xls, .xlsx — Máx. 10 MB</p>
+          </div>
+          <div class="drop-zone-selected" id="selectedClientes" style="display:none;">
+            <div class="file-info">
+              <div class="file-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div class="file-details">
+                <span class="file-name" id="fileNameClientes">—</span>
+                <span class="file-size" id="fileSizeClientes">—</span>
+              </div>
+              <button type="button" class="file-remove" id="removeClientes" aria-label="Remover arquivo">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error Message -->
+        <div class="error-msg" id="errorClientes" style="display:none;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <span id="errorTextClientes">Tipo de arquivo inválido. Use .xls ou .xlsx.</span>
+        </div>
+
+        <!-- Success Message -->
+        <div class="success-msg" id="successClientes" style="display:none;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>Arquivo pronto para importação!</span>
+        </div>
+
+        <!-- Action Button -->
+        <button class="btn-import btn-import--blue" id="btnImportClientes" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          <span id="btnImportClientesText">Importar Clientes</span>
+          <div class="btn-spinner" id="spinnerClientes" style="display:none;"></div>
+        </button>
+      </div>
+
+      <!-- Card B: Inadimplentes -->
+      <div class="import-card" id="cardInadimplentes">
+        <div class="import-card-decoration"></div>
+        <div class="import-card-decoration-2"></div>
+
+        <div class="import-card-header">
+          <div class="import-card-icon import-card-icon--amber">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+            </svg>
+          </div>
+          <div class="import-card-badge import-card-badge--amber">Pedidos Inadimplentes</div>
+        </div>
+
+        <h3 class="import-card-title">Importar Pedidos Inadimplentes</h3>
+        <p class="import-card-description">Envie uma planilha Excel com os pedidos inadimplentes. As colunas esperadas são: cliente, pedido, valor e data de vencimento.</p>
+
+        <!-- Drop Zone -->
+        <div class="drop-zone" id="dropZoneInadimplentes" role="button" tabindex="0" aria-label="Área de upload para inadimplentes">
+          <input type="file" id="fileInadimplentes" accept=".xls,.xlsx" class="file-input" aria-label="Selecionar arquivo de inadimplentes">
+          <div class="drop-zone-content" id="dropContentInadimplentes">
+            <div class="drop-zone-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </div>
+            <p class="drop-zone-text"><span class="drop-zone-link">Clique para selecionar</span> ou arraste o arquivo aqui</p>
+            <p class="drop-zone-hint">Formatos aceitos: .xls, .xlsx — Máx. 10 MB</p>
+          </div>
+          <div class="drop-zone-selected" id="selectedInadimplentes" style="display:none;">
+            <div class="file-info">
+              <div class="file-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div class="file-details">
+                <span class="file-name" id="fileNameInadimplentes">—</span>
+                <span class="file-size" id="fileSizeInadimplentes">—</span>
+              </div>
+              <button type="button" class="file-remove" id="removeInadimplentes" aria-label="Remover arquivo">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error Message -->
+        <div class="error-msg" id="errorInadimplentes" style="display:none;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <span id="errorTextInadimplentes">Tipo de arquivo inválido. Use .xls ou .xlsx.</span>
+        </div>
+
+        <!-- Success Message -->
+        <div class="success-msg" id="successInadimplentes" style="display:none;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>Arquivo pronto para importação!</span>
+        </div>
+
+        <!-- Action Button -->
+        <button class="btn-import btn-import--amber" id="btnImportInadimplentes" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          <span id="btnImportInadimplentesText">Importar Pedidos</span>
+          <div class="btn-spinner" id="spinnerInadimplentes" style="display:none;"></div>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Info Bar -->
+    <div class="info-bar">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <p>Os dados importados serão validados e processados em segundo plano. Você receberá uma notificação ao término da operação.</p>
+    </div>
+
+  </main>
+
+  <script src="importar.js"></script>
+</body>
+</html>

@@ -1,38 +1,31 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pendências - Projeto Boleto</title>
-  <link rel="stylesheet" href="/static/style.css" />
-</head>
-<body data-page="pendencias">
-  <header class="topbar">
-    <div>
-      <h1>Pendências de vínculo</h1>
-      <p>Resolver cobranças sem vínculo seguro com cliente</p>
-    </div>
-    <div class="topbar-actions">
-      <a class="button-link" href="/">Dashboard</a>
-      <a class="button-link" href="/importacao">Importação</a>
-      <span class="user-badge" data-user-name>Não autenticado</span>
-      <button id="logout-btn" data-logout type="button">Sair</button>
-    </div>
-  </header>
+<?php
+$pageTitle = "Pendências - Projeto Boleto";
+$headerTitle = "Pendências de Vínculo";
+$headerSubtitle = "Resolva inconsistências nas importações";
+$currentPage = "pendencias";
+$extraCss = ["styles.css"];
+$extraJs = ["api.js", "pendencias.js"];
+include __DIR__ . '/includes/header.php';
+?>
 
-  <main class="page-container">
-    <div id="pendings-message" class="message-box"></div>
+<main class="main-container">
+  <div id="pendings-message" class="message-box"></div>
 
-    <section class="card">
-      <div class="form-inline">
-        <input id="pendings-batch-id" type="number" placeholder="Informe o batch_id" />
-        <button id="load-pendings-btn" type="button">Carregar pendências</button>
+  <section class="card" style="margin-bottom: 32px;">
+    <div class="card-body">
+      <div style="display: flex; gap: 12px; align-items: flex-end;">
+        <div style="flex: 1;">
+          <label class="form-label" for="pendings-batch-id">ID do Lote</label>
+          <input id="pendings-batch-id" type="number" class="form-input" placeholder="Ex: 42" />
+        </div>
+        <button id="load-pendings-btn" class="btn btn-secondary" type="button">Carregar Pendências</button>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <section id="pendings-list" class="content-list"></section>
-  </main>
+  <section id="pendings-list">
+    <!-- Rendered by JS -->
+  </section>
+</main>
 
-  <script src="/static/script.js"></script>
-</body>
-</html>
+<?php include __DIR__ . '/includes/footer.php'; ?>

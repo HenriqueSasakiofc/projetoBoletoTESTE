@@ -7,29 +7,60 @@ $dotenv->load();
 
 \Config\Database::connect();
 
-// Create Router instance
-$router = new \Bramus\Router\Router();
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$method = $_SERVER['REQUEST_METHOD'];
 
-// Define API Routes
-$router->mount('/api', function() use ($router) {
+// Helper to handle routes
+function handleRoute($pattern, $controllerMethod) {
+    global $uri, $method;
+    
+    // Convert pattern to regex
+    $regex = str_replace('/', '\/', $pattern);
+    $regex = preg_replace('/\{\w+\}/', '(\d+)', $regex);
+    $regex = "/^" . $regex . "$/";
 
-    // Healthcheck
-    $router->get('/health', function() {
+    if (preg_match($regex, $uri, $matches)) {
+        array_shift($matches); // Remove full match
+        list($controllerClass, $action) = explode('@', $controllerMethod);
+        $fullClass = "\\App\\Controllers\\" . $controllerClass;
+        $controller = new $fullClass();
+        call_user_func_array([$controller, $action], $matches);
+        exit;
+    }
+}
+
+// Routes
+if ($method === 'GET') {
+    if ($uri === '/api/health') {
         header('Content-Type: application/json');
         echo json_encode(['status' => 'ok', 'app' => $_ENV['APP_NAME']]);
-    });
-    
-    // Auth Routes
-    $router->mount('/auth', function() use ($router) {
-        $router->post('/login', '\App\Controllers\AuthController@login');
-    });
+        exit;
+    }
+    handleRoute('/api/clients', 'ClientsApiController@index');
+    handleRoute('/api/clients/{id}', 'ClientsApiController@show');
+    handleRoute('/api/message-template', 'MessagesApiController@getTemplate');
+    handleRoute('/api/upload-batches/{id}/pendings', 'UploadBatchesController@pendings');
+}
 
-    // Sub-routing for Imports
-    $router->mount('/imports', function() use ($router) {
-        $router->post('/upload', '\App\Controllers\ImportsController@upload');
-    });
+if ($method === 'POST') {
+    handleRoute('/api/auth/login', 'AuthController@login');
+    handleRoute('/api/imports/upload', 'ImportsApiController@upload');
+    handleRoute('/api/customers/{id}/send-manual-message', 'MessagesApiController@sendManual');
+    handleRoute('/api/receivables/{id}/queue-standard-message', 'ReceivablesController@queueStandardMessage');
+}
 
-});
+if ($method === 'PUT') {
+    handleRoute('/api/message-template', 'MessagesApiController@updateTemplate');
+}
 
-// Run the routing magic
-$router->run();
+if ($method === 'POST' && $uri === '/api/auth/register-company') {
+    http_response_code(403);
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Cadastro publico de empresa desativado. Solicite a criacao manual do acesso.']);
+    exit;
+}
+
+// 404 Fallback
+http_response_code(404);
+header('Content-Type: application/json');
+echo json_encode(['error' => 'API Endpoint not found', 'uri' => $uri, 'method' => $method]);

@@ -1,66 +1,65 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Perfil do Cliente - Projeto Boleto</title>
-  <link rel="stylesheet" href="/static/style.css" />
-</head>
-<body data-page="cliente">
-  <header class="topbar">
-    <div>
-      <h1>Perfil do cliente</h1>
-      <p>Página dinâmica única para qualquer cliente</p>
-    </div>
-    <div class="topbar-actions">
-      <a class="button-link" href="/">Dashboard</a>
-      <a class="button-link" href="/clientes">Clientes</a>
-      <span class="user-badge" data-user-name>Não autenticado</span>
-      <button id="logout-btn" data-logout type="button">Sair</button>
-    </div>
-  </header>
+<?php
+$pageTitle = "Perfil do Cliente - Projeto Boleto";
+$headerTitle = "Perfil do Cliente";
+$headerSubtitle = "Visualize e gerencie detalhes do cliente";
+$currentPage = "cliente";
+$extraCss = ["styles.css"];
+$extraJs = ["api.js", "clienteDetail.js"];
+include __DIR__ . '/includes/header.php';
+?>
 
-  <main class="page-container">
-    <div id="client-detail-message" class="message-box"></div>
+<main class="main-container">
+  <div id="client-detail-message" class="message-box"></div>
 
+  <div class="grid">
     <section class="card">
-      <h2 id="client-name">Cliente</h2>
-      <div class="details-grid">
-        <div><strong>Código:</strong> <span id="client-code">-</span></div>
-        <div><strong>E-mail cobrança:</strong> <span id="client-email-billing">-</span></div>
-        <div><strong>E-mail financeiro:</strong> <span id="client-email-financial">-</span></div>
-        <div><strong>Telefone:</strong> <span id="client-phone">-</span></div>
-        <div><strong>Documento:</strong> <span id="client-document">-</span></div>
-        <div><strong>Outros contatos:</strong> <span id="client-other-contacts">-</span></div>
+      <div class="card-header">
+        <h2 class="card-title" id="client-name">Carregando...</h2>
+      </div>
+      <div class="card-body">
+        <div class="details-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div><label class="form-label">Código</label><p id="client-code">-</p></div>
+          <div><label class="form-label">Documento</label><p id="client-document">-</p></div>
+          <div><label class="form-label">E-mail Cobrança</label><p id="client-email-billing">-</p></div>
+          <div><label class="form-label">E-mail Financeiro</label><p id="client-email-financial">-</p></div>
+          <div><label class="form-label">Telefone</label><p id="client-phone">-</p></div>
+          <div><label class="form-label">Outros Contatos</label><p id="client-other-contacts">-</p></div>
+        </div>
       </div>
     </section>
 
     <section class="card">
-      <h2>Enviar mensagem manual</h2>
-      <form id="manual-message-form" class="form-grid">
-        <input id="manual-recipient" type="email" placeholder="Destinatário" required />
-        <input id="manual-subject" type="text" placeholder="Assunto" required />
-        <textarea id="manual-body" rows="8" placeholder="Corpo da mensagem" required></textarea>
-        <button type="submit">Colocar na fila</button>
-      </form>
+      <div class="card-header">
+        <h2 class="card-title">Enviar Mensagem Manual</h2>
+      </div>
+      <div class="card-body">
+        <form id="manual-message-form">
+          <div class="form-group">
+            <label class="form-label">Destinatário</label>
+            <input id="manual-recipient" type="email" class="form-input" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Assunto</label>
+            <input id="manual-subject" type="text" class="form-input" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mensagem</label>
+            <textarea id="manual-body" rows="4" class="form-input" required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Colocar na Fila</button>
+        </form>
+      </div>
     </section>
+  </div>
 
-    <section class="card">
-      <h2>Cobranças</h2>
-      <div id="client-receivables" class="content-list"></div>
-    </section>
+  <section class="card" style="margin-top: 32px;">
+    <div class="card-header">
+        <h2 class="card-title">Cobranças Ativas</h2>
+    </div>
+    <div id="client-receivables" class="card-body">
+        <!-- Rendered by JS -->
+    </div>
+  </section>
+</main>
 
-    <section class="card">
-      <h2>Histórico de cobranças</h2>
-      <div id="client-history" class="content-list"></div>
-    </section>
-
-    <section class="card">
-      <h2>Histórico de mensagens</h2>
-      <div id="client-messages" class="content-list"></div>
-    </section>
-  </main>
-
-  <script src="/static/script.js"></script>
-</body>
-</html>
+<?php include __DIR__ . '/includes/footer.php'; ?>

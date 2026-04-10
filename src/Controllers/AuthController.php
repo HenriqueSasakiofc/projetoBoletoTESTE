@@ -56,7 +56,77 @@ class AuthController {
         
         echo json_encode([
             'access_token' => $jwt,
-            'token_type' => 'bearer'
+            'token_type' => 'bearer',
+            'user' => [
+                'full_name' => $user->full_name,
+                'email' => $user->email
+            ]
         ]);
+    }
+
+    public function register() {
+        header('Content-Type: application/json');
+        http_response_code(403);
+        echo json_encode([
+            'error' => 'Cadastro publico de empresa desativado. Solicite a criacao manual do acesso.'
+        ]);
+        return;
+        /*
+        
+        $companyName = $input['company_name'] ?? '';
+        $adminFullName = $input['admin_full_name'] ?? '';
+        $adminEmail = trim(strtolower($input['admin_email'] ?? ''));
+        $adminPassword = $input['admin_password'] ?? '';
+        
+        if (!$companyName || !$adminEmail || !$adminPassword) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Nome da empresa, e-mail e senha são obrigatórios.']);
+            return;
+        }
+
+        try {
+            $company = \App\Models\Company::create([
+                'slug' => strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $companyName)),
+                'legal_name' => $companyName,
+                'trade_name' => $companyName
+            ]);
+
+            $user = \App\Models\User::create([
+                'company_id' => $company->id,
+                'email' => $adminEmail,
+                'full_name' => $adminFullName,
+                'password_hash' => self::hashPassword($adminPassword),
+                'role' => 'admin',
+                'is_active' => true
+            ]);
+
+            // Auto-login after register
+            $issuedAt = time();
+            $expire = $issuedAt + (($_ENV['ACCESS_TOKEN_EXPIRE_MINUTES'] ?? 1440) * 60);
+            $secretKey = $_ENV['SECRET_KEY'] ?? 'fallback_secret_key_change_me';
+            
+            $payload = [
+                'iat'  => $issuedAt,
+                'exp'  => $expire,
+                'sub'  => (string) $user->id,
+                'company_id' => $user->company_id,
+                'role' => $user->role
+            ];
+            
+            $jwt = \Firebase\JWT\JWT::encode($payload, $secretKey, 'HS256');
+
+            echo json_encode([
+                'access_token' => $jwt,
+                'token_type' => 'bearer',
+                'user' => [
+                    'full_name' => $user->full_name,
+                    'email' => $user->email
+                ]
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Erro ao criar conta: ' . $e->getMessage()]);
+        }
+        */
     }
 }

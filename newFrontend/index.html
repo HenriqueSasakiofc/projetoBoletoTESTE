@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Painel de Controle</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+
+  <body>
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="header-title">Painel de Controle</h1>
+        <p class="header-subtitle">Gerencie seus clientes e mensagens</p>
+      </div>
+      <button class="theme-toggle" id="themeToggle" aria-label="Alternar tema">
+        <svg
+          class="moon-icon"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"
+          />
+        </svg>
+        <svg
+          class="sun-icon"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="5" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+          />
+        </svg>
+      </button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+      <div class="grid">
+        <!-- Total Clients Card -->
+        <div class="card">
+          <div class="card-decoration"></div>
+          <div class="card-decoration-2"></div>
+          <div class="card-header">
+            <span class="card-title">Total de Clientes</span>
+            <div class="card-icon">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"
+                />
+              </svg>
+            </div>
+          </div>
+          <div class="total-clients-value" id="totalClients">1.247</div>
+          <span class="growth-badge">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M5 10l7-7m0 0l7 7m-7-7v18"
+              />
+            </svg>
+            +12% este mês
+          </span>
+          <div class="card-footer">
+            <a href="clientes.html" class="btn btn-secondary btn-full">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
+              </svg>
+              Ver Todos os Clientes
+            </a>
+          </div>
+        </div>
+
+        <!-- Import Spreadsheet Card -->
+        <div class="card import-card">
+          <div class="card-decoration"></div>
+          <div class="card-decoration-2"></div>
+          <div class="card-icon">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+              />
+            </svg>
+          </div>
+          <h3 class="import-card-title">Importar Planilha</h3>
+          <p class="import-card-description">
+            Importe seus clientes a partir de um arquivo Excel ou CSV
+          </p>
+          <button
+            class="btn btn-primary btn-full"
+            onclick="window.location.href = 'importar.html'"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            Selecionar Arquivo
+          </button>
+        </div>
+      </div>
+
+      <!-- Default Messages Section -->
+      <div class="messages-section">
+        <div class="card messages-card">
+          <div class="messages-header">
+            <h2 class="messages-title">Mensagens Padrão</h2>
+            <span class="messages-count" id="messagesCount">3 mensagens</span>
+          </div>
+          <div class="messages-body">
+            <!-- Form -->
+            <form id="messageForm">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="messageTitle"
+                    >Título da Mensagem</label
+                  >
+                  <input
+                    type="text"
+                    id="messageTitle"
+                    class="form-input"
+                    placeholder="Ex: Boas-vindas"
+                  />
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="messageContent"
+                  >Conteúdo da Mensagem</label
+                >
+                <textarea
+                  id="messageContent"
+                  class="form-input"
+                  placeholder="Digite o conteúdo da mensagem..."
+                ></textarea>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                  Adicionar Mensagem
+                </button>
+              </div>
+            </form>
+
+            <!-- Messages List -->
+            <div class="messages-list">
+              <h3 class="messages-list-header">Mensagens Configuradas</h3>
+              <div id="messagesList">
+                <div class="message-item">
+                  <div class="message-number">1</div>
+                  <div class="message-content">
+                    <div class="message-title">Boas-vindas</div>
+                    <div class="message-text">
+                      Olá! Seja bem-vindo à nossa plataforma. Estamos felizes em
+                      ter você conosco!
+                    </div>
+                  </div>
+                  <div class="message-actions">
+                    <button class="btn-icon" aria-label="Editar">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                        />
+                      </svg>
+                    </button>
+                    <button class="btn-icon delete" aria-label="Excluir">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="message-item">
+                  <div class="message-number">2</div>
+                  <div class="message-content">
+                    <div class="message-title">Acompanhamento</div>
+                    <div class="message-text">
+                      Como está sendo sua experiência até agora? Estamos aqui
+                      para ajudar!
+                    </div>
+                  </div>
+                  <div class="message-actions">
+                    <button class="btn-icon" aria-label="Editar">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                        />
+                      </svg>
+                    </button>
+                    <button class="btn-icon delete" aria-label="Excluir">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="message-item">
+                  <div class="message-number">3</div>
+                  <div class="message-content">
+                    <div class="message-title">Oferta Especial</div>
+                    <div class="message-text">
+                      Temos uma oferta especial para você! Confira nossos novos
+                      produtos com desconto.
+                    </div>
+                  </div>
+                  <div class="message-actions">
+                    <button class="btn-icon" aria-label="Editar">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                        />
+                      </svg>
+                    </button>
+                    <button class="btn-icon delete" aria-label="Excluir">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      // Theme Toggle
+      const themeToggle = document.getElementById("themeToggle");
+      const html = document.documentElement;
+
+      // Check for saved theme preference or default to light
+      const savedTheme = localStorage.getItem("theme");
+      if (savedTheme === "dark") {
+        html.classList.add("dark");
+      }
+
+      themeToggle.addEventListener("click", () => {
+        html.classList.toggle("dark");
+        const isDark = html.classList.contains("dark");
+        localStorage.setItem("theme", isDark ? "dark" : "light");
+      });
+
+      // Messages functionality
+      let messages = [
+        {
+          id: 1,
+          title: "Boas-vindas",
+          text: "Olá! Seja bem-vindo à nossa plataforma. Estamos felizes em ter você conosco!",
+        },
+        {
+          id: 2,
+          title: "Acompanhamento",
+          text: "Como está sendo sua experiência até agora? Estamos aqui para ajudar!",
+        },
+        {
+          id: 3,
+          title: "Oferta Especial",
+          text: "Temos uma oferta especial para você! Confira nossos novos produtos com desconto.",
+        },
+      ];
+
+      const messageForm = document.getElementById("messageForm");
+      const messagesList = document.getElementById("messagesList");
+      const messagesCount = document.getElementById("messagesCount");
+
+      function updateMessagesCount() {
+        messagesCount.textContent = `${messages.length} ${messages.length === 1 ? "mensagem" : "mensagens"}`;
+      }
+
+      function renderMessages() {
+        messagesList.innerHTML = messages
+          .map(
+            (msg, index) => `
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      <div class="message-item" data-id="${msg.id}">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <div class="message-number">${index + 1}</div>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          <div class="message-content">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      <div class="message-title">${msg.title}</div>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  <div class="message-text">${msg.text}</div>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      <div class="message-actions">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  <button class="btn-icon" aria-label="Editar">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              </svg>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          </button>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      <button class="btn-icon delete" aria-label="Excluir" onclick="deleteMessage(${msg.id})">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  </svg>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              </button>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        </div>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                </div>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      `,
+          )
+          .join("");
+        updateMessagesCount();
+      }
+
+      function deleteMessage(id) {
+        messages = messages.filter((m) => m.id !== id);
+        renderMessages();
+      }
+
+      messageForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const title = document.getElementById("messageTitle").value.trim();
+        const content = document.getElementById("messageContent").value.trim();
+
+        if (title && content) {
+          const newId = Math.max(...messages.map((m) => m.id), 0) + 1;
+          messages.push({ id: newId, title, text: content });
+          renderMessages();
+          messageForm.reset();
+        }
+      });
+    </script>
+  </body>
+</html>
+>

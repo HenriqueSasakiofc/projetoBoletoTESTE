@@ -1,58 +1,58 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Criar conta da empresa - Projeto Boleto</title>
-  <link rel="stylesheet" href="/static/style.css" />
-</head>
-<body data-page="cadastro">
-  <header class="topbar">
-    <div>
-      <h1>Criar conta da empresa</h1>
-      <p>Cadastre sua empresa e o primeiro administrador do ambiente</p>
+<?php
+$pageTitle = "Criar conta da empresa - Projeto Boleto";
+$headerTitle = "Cadastro de Empresa";
+$headerSubtitle = "Crie sua conta para começar a gerenciar seus boletos";
+$currentPage = "cadastro";
+$extraCss = ["styles.css"];
+$extraJs = ["api.js", "cadastro.js"];
+include __DIR__ . '/includes/header.php';
+?>
+
+<main class="main-container">
+  <div id="register-message" class="message-box"></div>
+
+  <section class="card" style="max-width: 600px; margin: 0 auto;">
+    <div class="card-header">
+      <h2 class="card-title">Cadastro Inicial</h2>
     </div>
-    <div class="topbar-actions">
-      <a class="button-link" href="/">Voltar para login</a>
-    </div>
-  </header>
+    <div class="card-body">
+      <form id="register-form">
+        <div class="form-group">
+          <label class="form-label" for="register-company-name">Nome da Empresa</label>
+          <input id="register-company-name" type="text" class="form-input" placeholder="Minha Empresa LTDA" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="register-admin-name">Seu Nome Completo</label>
+          <input id="register-admin-name" type="text" class="form-input" placeholder="João Silva" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="register-admin-email">E-mail Administrativo</label>
+          <input id="register-admin-email" type="email" class="form-input" placeholder="admin@empresa.com" required />
+        </div>
+        <div class="grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label" for="register-admin-password">Senha</label>
+            <input id="register-admin-password" type="password" class="form-input" minlength="8" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="register-admin-password-confirm">Confirmar Senha</label>
+            <input id="register-admin-password-confirm" type="password" class="form-input" minlength="8" required />
+          </div>
+        </div>
 
-  <main class="page-container">
-    <div id="register-message" class="message-box"></div>
+        <input id="register-website" type="text" name="website" autocomplete="off" tabindex="-1" style="display:none" />
 
-    <section class="card">
-      <h2>Cadastro inicial</h2>
+        <div class="form-group" style="margin-top: 16px;">
+          <label style="display:flex; gap:10px; align-items:center; cursor:pointer;">
+            <input id="register-terms" type="checkbox" style="width:20px; height:20px;" required />
+            <span>Li e aceito os termos de uso.</span>
+          </label>
+        </div>
 
-      <form id="register-form" class="form-grid">
-        <input id="register-company-name" type="text" placeholder="Nome da empresa" required />
-        <input id="register-admin-name" type="text" placeholder="Seu nome" required />
-        <input id="register-admin-email" type="email" placeholder="Seu e-mail" required />
-        <input id="register-admin-password" type="password" placeholder="Senha" minlength="8" required />
-        <input id="register-admin-password-confirm" type="password" placeholder="Confirmar senha" minlength="8" required />
-
-        <input
-          id="register-website"
-          type="text"
-          name="website"
-          autocomplete="off"
-          tabindex="-1"
-          style="position:absolute;left:-9999px;opacity:0;pointer-events:none;"
-        />
-
-        <label style="display:flex;gap:10px;align-items:flex-start;">
-          <input id="register-terms" type="checkbox" style="width:auto;margin-top:3px;" />
-          <span>Li e aceito os termos de uso da plataforma.</span>
-        </label>
-
-        <button type="submit">Criar conta</button>
+        <button type="submit" class="btn btn-primary btn-full" style="margin-top: 24px;">Criar Conta</button>
       </form>
+    </div>
+  </section>
+</main>
 
-      <p class="hint-text" style="margin-top:12px;">
-        Esse cadastro cria uma empresa nova e o primeiro usuário administrador dela.
-      </p>
-    </section>
-  </main>
-
-  <script src="/static/script.js"></script>
-</body>
-</html>
+<?php include __DIR__ . '/includes/footer.php'; ?>
