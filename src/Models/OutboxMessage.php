@@ -12,6 +12,8 @@ class OutboxMessage extends Model {
         'customer_id',
         'created_by_user_id',
         'message_kind',
+        'notification_event',
+        'scheduled_for_date',
         'recipient_email',
         'subject',
         'body',

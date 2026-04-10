@@ -9,6 +9,36 @@ class ClientsApiController {
         return Auth::userFromRequest();
     }
 
+    private function formatMoney($value): string {
+        return number_format((float) $value, 2, ',', '.');
+    }
+
+    private function receivableIdentityKey($receivable): string {
+        if (!empty($receivable->receivable_number)) {
+            return 'receivable:' . $receivable->receivable_number;
+        }
+
+        if (!empty($receivable->nosso_numero)) {
+            return 'nosso:' . $receivable->nosso_numero;
+        }
+
+        return implode('|', [
+            'fallback',
+            $receivable->customer_id ?? '',
+            $receivable->due_date ?: '',
+            $receivable->snapshot_customer_name ?: '',
+        ]);
+    }
+
+    private function uniqueDebtReceivables($receivables) {
+        return $receivables
+            ->sortByDesc(function ($receivable) {
+                return strtotime((string) ($receivable->updated_at ?? $receivable->created_at ?? '1970-01-01 00:00:00'));
+            })
+            ->unique(fn ($receivable) => $this->receivableIdentityKey($receivable))
+            ->values();
+    }
+
     private function maskEmail(?string $value): ?string {
         if (!$value || strpos($value, '@') === false) {
             return $value;
@@ -83,18 +113,14 @@ class ClientsApiController {
         $today = date('Y-m-d');
 
         $query = Customer::where('company_id', $user->company_id)
-            ->withCount([
-                'receivables as overdue_receivables_total' => function ($q) use ($today) {
-                    $q->where('is_active', true)
-                        ->whereNotIn('status', ['PAGO', 'BAIXADO', 'CANCELADO'])
-                        ->whereNotNull('due_date')
-                        ->where('due_date', '<', $today)
-                        ->where(function ($balanceQuery) {
-                            $balanceQuery->whereNull('balance_amount')
-                                ->orWhere('balance_amount', '>', 0);
-                        });
-                }
-            ]);
+            ->with(['receivables' => function ($q) {
+                $q->where('is_active', true)
+                    ->whereNotIn('status', ['PAGO', 'BAIXADO', 'CANCELADO'])
+                    ->where(function ($balanceQuery) {
+                        $balanceQuery->whereNull('balance_amount')
+                            ->orWhere('balance_amount', '>', 0);
+                    });
+            }]);
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
@@ -109,7 +135,15 @@ class ClientsApiController {
             ->offset(($page - 1) * $pageSize)
             ->limit($pageSize)
             ->get()
-            ->map(function ($customer) {
+            ->map(function ($customer) use ($today) {
+                $uniqueReceivables = $this->uniqueDebtReceivables($customer->receivables);
+                $debtAmountTotal = $uniqueReceivables->sum(function ($receivable) {
+                    return (float) ($receivable->balance_amount ?? $receivable->amount_total ?? 0);
+                });
+                $overdueReceivablesTotal = $uniqueReceivables->filter(function ($receivable) use ($today) {
+                    return !empty($receivable->due_date) && $receivable->due_date < $today;
+                })->count();
+
                 return [
                     'id' => (int) $customer->id,
                     'external_code' => $customer->external_code,
@@ -118,7 +152,9 @@ class ClientsApiController {
                     'phone' => $customer->phone,
                     'document_number' => $customer->document_number,
                     'is_active' => (bool) $customer->is_active,
-                    'overdue_receivables_total' => (int) ($customer->overdue_receivables_total ?? 0),
+                    'debt_amount_total' => round($debtAmountTotal, 2),
+                    'debt_amount_total_formatted' => $this->formatMoney($debtAmountTotal),
+                    'overdue_receivables_total' => $overdueReceivablesTotal,
                 ];
             })
             ->values();
@@ -157,6 +193,15 @@ class ClientsApiController {
             return;
         }
 
+        $uniqueReceivables = $this->uniqueDebtReceivables($customer->receivables);
+        $debtAmountTotal = $uniqueReceivables->sum(function ($receivable) {
+            if (in_array($receivable->status, ['PAGO', 'BAIXADO', 'CANCELADO'], true)) {
+                return 0;
+            }
+
+            return (float) ($receivable->balance_amount ?? $receivable->amount_total ?? 0);
+        });
+
         echo json_encode([
             'id' => (int) $customer->id,
             'external_code' => $customer->external_code,
@@ -171,7 +216,40 @@ class ClientsApiController {
             'phone_masked' => $this->maskPhone($customer->phone),
             'other_contacts' => $customer->other_contacts,
             'is_active' => (bool) $customer->is_active,
-            'receivables' => $customer->receivables->map(fn ($receivable) => $this->serializeReceivable($receivable))->values(),
+            'debt_amount_total' => round($debtAmountTotal, 2),
+            'debt_amount_total_formatted' => $this->formatMoney($debtAmountTotal),
+            'receivables' => $uniqueReceivables->map(fn ($receivable) => $this->serializeReceivable($receivable))->values(),
+        ]);
+    }
+
+    public function destroy($id) {
+        header('Content-Type: application/json');
+
+        $user = $this->getAuthedUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        $customer = Customer::where('company_id', $user->company_id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$customer) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Cliente nao encontrado.']);
+            return;
+        }
+
+        $customerName = $customer->full_name;
+        $receivablesCount = $customer->receivables()->count();
+        $customer->delete();
+
+        echo json_encode([
+            'status' => 'deleted',
+            'message' => "Registro do cliente {$customerName} excluido com sucesso.",
+            'deleted_receivables' => $receivablesCount,
         ]);
     }
 }

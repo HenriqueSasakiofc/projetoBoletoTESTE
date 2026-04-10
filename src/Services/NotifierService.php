@@ -1,30 +1,110 @@
 <?php
 namespace App\Services;
 
+use App\Models\Customer;
+use App\Models\MessageTemplate;
+use App\Models\NotificationTemplate;
 use App\Models\OutboxMessage;
 use App\Models\Receivable;
-use App\Models\MessageTemplate;
-use App\Models\Customer;
+use App\Models\UploadBatch;
+use DateTimeImmutable;
+use DateTimeInterface;
+use DateTimeZone;
 use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
 
 class NotifierService {
+    public const EVENT_REMINDER_7_DAYS = 'lembrete_7_dias';
+    public const EVENT_DUE_TODAY = 'vencimento_hoje';
+    public const EVENT_OVERDUE = 'vencido';
 
-    // ALLOWED_PLACEHOLDERS mapping based on Python's notifier.py
     protected const ALLOWED_PLACEHOLDERS = [
-        "customer_name", "customer_document", "customer_email",
-        "receivable_number", "nosso_numero", "due_date",
-        "amount_total", "balance_amount", "status"
+        'customer_name',
+        'customer_document',
+        'customer_email',
+        'receivable_number',
+        'nosso_numero',
+        'charge_title',
+        'due_date',
+        'amount_total',
+        'balance_amount',
+        'balance_without_interest',
+        'status',
+        'days_overdue',
+        'imported_at',
+        'event_label',
     ];
 
-    public static function formatMoney($value): string {
-        if ($value === null) return "";
-        return number_format((float)$value, 2, ',', '.');
+    protected const AUTOMATIC_TEMPLATE_DEFINITIONS = [
+        self::EVENT_REMINDER_7_DAYS => [
+            'subject' => 'Faltam 7 dias para o vencimento do titulo {{receivable_number}}',
+            'body' => "Ola, {{customer_name}}.\n\nEstamos passando para lembrar que o titulo {{receivable_number}} ({{charge_title}}) vence em {{due_date}}.\nValor: R$ {{amount_total}}\n\nSe o pagamento ja foi programado, desconsidere esta mensagem.",
+        ],
+        self::EVENT_DUE_TODAY => [
+            'subject' => 'O titulo {{receivable_number}} vence hoje',
+            'body' => "Ola, {{customer_name}}.\n\nEste e um lembrete de que o titulo {{receivable_number}} ({{charge_title}}) vence hoje, {{due_date}}.\nValor: R$ {{amount_total}}\nSaldo atual: R$ {{balance_amount}}\n\nSe o pagamento ja foi realizado, desconsidere esta mensagem.",
+        ],
+        self::EVENT_OVERDUE => [
+            'subject' => 'Titulo vencido: {{receivable_number}}',
+            'body' => "Ola, {{customer_name}}.\n\nIdentificamos que o titulo {{receivable_number}} ({{charge_title}}) esta vencido desde {{due_date}}.\nValor: R$ {{amount_total}}\nSaldo atual: R$ {{balance_amount}}\nDias em atraso: {{days_overdue}}\n\nPedimos, por gentileza, que verifique a regularizacao. Se o pagamento ja foi feito, desconsidere esta mensagem.",
+        ],
+    ];
+
+    public static function defaultTimezone(): DateTimeZone {
+        return new DateTimeZone($_ENV['APP_TIMEZONE'] ?? 'America/Sao_Paulo');
     }
 
-    public static function formatDate($value): string {
-        if (empty($value)) return "";
-        return date("d/m/Y", strtotime($value));
+    public static function today(?string $referenceDate = null): DateTimeImmutable {
+        $timezone = self::defaultTimezone();
+        $value = $referenceDate ?: 'now';
+        return (new DateTimeImmutable($value, $timezone))->setTime(0, 0, 0);
+    }
+
+    public static function parseCalendarDate($value): ?DateTimeImmutable {
+        if ($value instanceof DateTimeInterface) {
+            return (new DateTimeImmutable($value->format('Y-m-d H:i:s'), self::defaultTimezone()))->setTime(0, 0, 0);
+        }
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (new DateTimeImmutable((string) $value, self::defaultTimezone()))->setTime(0, 0, 0);
+    }
+
+    public static function parseDateTime($value): ?DateTimeImmutable
+    {
+        if ($value instanceof DateTimeInterface) {
+            return new DateTimeImmutable($value->format('Y-m-d H:i:s'), self::defaultTimezone());
+        }
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return new DateTimeImmutable((string) $value, self::defaultTimezone());
+    }
+
+    public static function formatMoney($value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        return number_format((float) $value, 2, ',', '.');
+    }
+
+    public static function formatDate($value): string
+    {
+        $date = self::parseCalendarDate($value);
+
+        return $date ? $date->format('d/m/Y') : '';
+    }
+
+    public static function formatDateTime($value): string
+    {
+        $date = self::parseDateTime($value);
+
+        return $date ? $date->format('d/m/Y H:i') : '';
     }
 
     public static function renderTemplate(string $subject, string $body, array $context): array {
@@ -128,12 +208,18 @@ class NotifierService {
         ]);
     }
 
-    public static function dispatchPendingOutbox(int $companyId, int $limit = 20): array {
+    public static function dispatchPendingOutbox(int $companyId, int $limit = 20, ?array $messageKinds = null): array {
         $limit = max(1, min(200, $limit));
 
-        $messages = OutboxMessage::where('company_id', $companyId)
-            ->where('status', 'pending')
-            ->orderBy('created_at', 'asc')
+        $query = OutboxMessage::where('company_id', $companyId)
+            ->whereIn('status', ['pending', 'error'])
+            ->orderBy('created_at', 'asc');
+
+        if (is_array($messageKinds) && !empty($messageKinds)) {
+            $query->whereIn('message_kind', $messageKinds);
+        }
+
+        $messages = $query
             ->limit($limit)
             ->get();
 

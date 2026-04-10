@@ -29,4 +29,8 @@ class Receivable extends Model {
     public function customer() {
         return $this->belongsTo(Customer::class);
     }
+
+    public function uploadBatch() {
+        return $this->belongsTo(UploadBatch::class, 'upload_batch_id');
+    }
 }

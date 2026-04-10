@@ -51,7 +51,10 @@ const API = {
         (isJson && (data.error || data.detail || data.message)) ||
         (typeof data === "string" && data) ||
         `Erro ${response.status} na requisição.`;
-      throw new Error(detail);
+      const error = new Error(detail);
+      error.status = response.status;
+      error.data = data;
+      throw error;
     }
 
     return data;

@@ -39,18 +39,24 @@ if ($method === 'GET') {
     handleRoute('/api/clients', 'ClientsApiController@index');
     handleRoute('/api/clients/{id}', 'ClientsApiController@show');
     handleRoute('/api/message-template', 'MessagesApiController@getTemplate');
+    handleRoute('/api/upload-batches/latest', 'UploadBatchesController@latest');
     handleRoute('/api/upload-batches/{id}/pendings', 'UploadBatchesController@pendings');
 }
 
 if ($method === 'POST') {
     handleRoute('/api/auth/login', 'AuthController@login');
     handleRoute('/api/imports/upload', 'ImportsApiController@upload');
+    handleRoute('/api/upload-batches/{id}/reprocess', 'UploadBatchesController@reprocess');
     handleRoute('/api/customers/{id}/send-manual-message', 'MessagesApiController@sendManual');
     handleRoute('/api/receivables/{id}/queue-standard-message', 'ReceivablesController@queueStandardMessage');
 }
 
 if ($method === 'PUT') {
     handleRoute('/api/message-template', 'MessagesApiController@updateTemplate');
+}
+
+if ($method === 'DELETE') {
+    handleRoute('/api/clients/{id}', 'ClientsApiController@destroy');
 }
 
 if ($method === 'POST' && $uri === '/api/auth/register-company') {

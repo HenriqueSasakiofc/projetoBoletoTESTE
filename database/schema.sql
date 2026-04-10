@@ -261,6 +261,22 @@ CREATE TABLE IF NOT EXISTS `message_templates` (
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `notification_templates` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `company_id` INT UNSIGNED NOT NULL,
+  `event_code` VARCHAR(50) NOT NULL,
+  `subject` VARCHAR(255) NOT NULL,
+  `body` TEXT NOT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_notification_templates_company_event` (`company_id`, `event_code`),
+  CONSTRAINT `fk_notification_templates_company`
+    FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `manual_messages` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `company_id` INT UNSIGNED NOT NULL,
@@ -294,6 +310,8 @@ CREATE TABLE IF NOT EXISTS `outbox_messages` (
   `customer_id` INT UNSIGNED DEFAULT NULL,
   `created_by_user_id` INT UNSIGNED DEFAULT NULL,
   `message_kind` VARCHAR(50) NOT NULL,
+  `notification_event` VARCHAR(50) DEFAULT NULL,
+  `scheduled_for_date` DATE DEFAULT NULL,
   `recipient_email` VARCHAR(255) NOT NULL,
   `subject` VARCHAR(255) NOT NULL,
   `body` TEXT NOT NULL,
@@ -310,6 +328,8 @@ CREATE TABLE IF NOT EXISTS `outbox_messages` (
   KEY `idx_outbox_messages_customer_id` (`customer_id`),
   KEY `idx_outbox_messages_status` (`status`),
   KEY `idx_outbox_messages_created_at` (`created_at`),
+  KEY `idx_outbox_messages_event_schedule` (`company_id`, `notification_event`, `scheduled_for_date`),
+  KEY `idx_outbox_messages_receivable_event` (`company_id`, `receivable_id`, `notification_event`),
   CONSTRAINT `fk_outbox_messages_company`
     FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`)
     ON DELETE CASCADE,

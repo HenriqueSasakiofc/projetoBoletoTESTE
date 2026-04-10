@@ -64,6 +64,37 @@ include __DIR__ . '/includes/header.php';
     </button>
   </div>
 
+  <section class="batch-ops-panel" id="latestBatchPanel" style="margin-top: 28px;">
+    <div class="batch-ops-header">
+      <div>
+        <p class="batch-ops-eyebrow">Ultimo lote</p>
+        <h3 class="batch-ops-title" id="latestBatchTitle">Nenhum lote disponível</h3>
+        <p class="batch-ops-text" id="latestBatchSubtitle">Assim que um lote for enviado, você poderá acompanhar o status e reprocessar sem pedir os arquivos novamente.</p>
+      </div>
+      <div class="batch-ops-actions">
+        <span class="batch-ops-badge batch-ops-badge--idle" id="latestBatchBadge">Sem lote</span>
+        <button type="button" class="btn btn-secondary" id="btnReprocessBatch" disabled>Reprocessar lote</button>
+      </div>
+    </div>
+    <div class="batch-ops-grid">
+      <div class="batch-ops-stat">
+        <strong id="latestBatchCustomers">0</strong>
+        <span>Clientes</span>
+      </div>
+      <div class="batch-ops-stat">
+        <strong id="latestBatchReceivables">0</strong>
+        <span>Cobrancas</span>
+      </div>
+      <div class="batch-ops-stat">
+        <strong id="latestBatchInvalid">0</strong>
+        <span>Linhas invalidas</span>
+      </div>
+    </div>
+    <div class="batch-ops-files" id="latestBatchFiles">Nenhum arquivo enviado ainda.</div>
+    <p class="batch-ops-error" id="latestBatchError" style="display:none;"></p>
+    <p class="batch-ops-hint" id="latestBatchHint">Os novos uploads ficam guardados automaticamente para permitir reprocessamento.</p>
+  </section>
+
   <!-- Result Panel (hidden until upload completes) -->
   <div id="uploadResult" style="display:none; margin-top: 28px; padding: 24px 28px; border-radius: 16px; border: 1px solid var(--border-color); background: var(--card-bg);">
     <div id="uploadResultSuccess" style="display:none;">
@@ -72,8 +103,8 @@ include __DIR__ . '/includes/header.php';
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
         </div>
         <div>
-          <h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--text-primary)">Lote processado com sucesso!</h3>
-          <p style="margin:4px 0 0;font-size:0.875rem;color:var(--text-secondary)">Todos os registros foram importados.</p>
+          <h3 id="uploadSuccessTitle" style="margin:0;font-size:1.1rem;font-weight:700;color:var(--text-primary)">Lote processado com sucesso!</h3>
+          <p id="uploadSuccessText" style="margin:4px 0 0;font-size:0.875rem;color:var(--text-secondary)">Todos os registros foram importados.</p>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">

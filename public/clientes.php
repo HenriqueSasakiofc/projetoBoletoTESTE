@@ -34,6 +34,7 @@ include __DIR__ . '/includes/header.php';
             <th>Nome</th>
             <th>Email</th>
             <th>Telefone</th>
+            <th>Dívida Atual</th>
             <th>Status</th>
             <th>Ações</th>
           </tr>

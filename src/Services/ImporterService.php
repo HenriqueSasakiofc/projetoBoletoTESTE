@@ -198,13 +198,58 @@ class ImporterService {
     public static function parseDecimal($value): ?float {
         if ($value === null || $value === '') return null;
         if (is_numeric($value)) return (float)$value;
-        $str = str_replace(['R$', ' '], '', $value);
-        if (strpos($str, ',') !== false && strpos($str, '.') !== false) {
-            $str = str_replace(['.', ','], ['', '.'], $str);
-        } else {
-            $str = str_replace(',', '.', $str);
+        $str = str_replace(['R$', ' ', "\u{00A0}"], '', (string) $value);
+        $lastComma = strrpos($str, ',');
+        $lastDot = strrpos($str, '.');
+
+        if ($lastComma !== false && $lastDot !== false) {
+            if ($lastComma > $lastDot) {
+                $str = str_replace('.', '', $str);
+                $str = str_replace(',', '.', $str);
+            } else {
+                $str = str_replace(',', '', $str);
+            }
+        } elseif ($lastComma !== false) {
+            $digitsAfterComma = strlen($str) - $lastComma - 1;
+            if ($digitsAfterComma === 2) {
+                $str = str_replace('.', '', $str);
+                $str = str_replace(',', '.', $str);
+            } else {
+                $str = str_replace(',', '', $str);
+            }
+        } elseif (substr_count($str, '.') > 1) {
+            $parts = explode('.', $str);
+            $decimalPart = array_pop($parts);
+            $str = implode('', $parts) . '.' . $decimalPart;
         }
+
         return is_numeric($str) ? (float)$str : null;
+    }
+
+    public static function inferCustomerIsActiveFromRow(array $row): bool {
+        $inactiveValue = self::sanitizeCell(self::pickValue($row, ['inativo', 'inactive']));
+        if ($inactiveValue !== null) {
+            $inactive = self::normalizeName($inactiveValue);
+            if (in_array($inactive, ['sim', 's', 'yes', 'true', '1', 'inativo', 'inactive'], true)) {
+                return false;
+            }
+            if (in_array($inactive, ['nao', 'n', 'no', 'false', '0', 'ativo', 'active'], true)) {
+                return true;
+            }
+        }
+
+        $activeValue = self::sanitizeCell(self::pickValue($row, ['ativo', 'active', 'status']));
+        if ($activeValue !== null) {
+            $active = self::normalizeName($activeValue);
+            if (in_array($active, ['sim', 's', 'yes', 'true', '1', 'ativo', 'active'], true)) {
+                return true;
+            }
+            if (in_array($active, ['nao', 'n', 'no', 'false', '0', 'inativo', 'inactive'], true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static function parseDate($value): ?string {

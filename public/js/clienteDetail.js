@@ -28,6 +28,8 @@ async function initClientDetailPage() {
     $("#client-phone").textContent = data.phone_masked || data.phone || "-";
     $("#client-document").textContent = data.document_number_masked || data.document_number || "-";
     $("#client-other-contacts").textContent = data.other_contacts || "-";
+    $("#client-debt-total").textContent = `R$ ${data.debt_amount_total_formatted || "0,00"}`;
+    $("#client-status").textContent = data.is_active === false ? "Inativo" : "Ativo";
 
     $("#manual-recipient").value = data.email_billing || "";
     renderReceivables(data.receivables || []);
@@ -85,6 +87,21 @@ async function initClientDetailPage() {
         $("#manual-message-form").reset();
     } catch (error) {
         alert("Erro: " + error.message);
+    }
+  });
+
+  $("#delete-client-btn")?.addEventListener("click", async () => {
+    const confirmed = window.confirm("Deseja realmente excluir este cliente? Essa ação remove também as cobranças vinculadas.");
+    if (!confirmed) return;
+
+    try {
+      const result = await API.request(`/api/clients/${customerId}`, {
+        method: "DELETE",
+      });
+      alert(result.message || "Cliente excluído com sucesso.");
+      window.location.href = "/clientes";
+    } catch (error) {
+      alert("Erro ao excluir cliente: " + error.message);
     }
   });
 

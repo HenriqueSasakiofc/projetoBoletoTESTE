@@ -710,6 +710,149 @@ body {
 }
 
 /* =====================================================
+   LAST BATCH PANEL
+   ===================================================== */
+.batch-ops-panel {
+  padding: 24px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(circle at top right, rgba(79, 70, 229, 0.12), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, transparent), var(--card));
+  box-shadow: var(--shadow);
+}
+
+.batch-ops-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.batch-ops-eyebrow {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.batch-ops-title {
+  margin-top: 6px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.batch-ops-text {
+  margin-top: 6px;
+  max-width: 640px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--muted-foreground);
+}
+
+.batch-ops-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.batch-ops-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.batch-ops-badge--success {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.28);
+  color: #15803d;
+}
+
+.batch-ops-badge--error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.24);
+  color: #dc2626;
+}
+
+.batch-ops-badge--warning {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.24);
+  color: #d97706;
+}
+
+.batch-ops-badge--idle {
+  background: var(--secondary);
+  border-color: var(--border);
+  color: var(--secondary-foreground);
+}
+
+.batch-ops-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.batch-ops-stat {
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--secondary) 86%, transparent);
+}
+
+.batch-ops-stat strong {
+  display: block;
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--foreground);
+}
+
+.batch-ops-stat span {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.84rem;
+  color: var(--muted-foreground);
+}
+
+.batch-ops-files,
+.batch-ops-hint,
+.batch-ops-error {
+  margin-top: 16px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.batch-ops-files {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+.batch-ops-hint {
+  color: var(--muted-foreground);
+}
+
+.batch-ops-error {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  color: var(--red-text);
+}
+
+/* =====================================================
    RESPONSIVE
    ===================================================== */
 @media (max-width: 768px) {
@@ -744,5 +887,18 @@ body {
 
   .import-card {
     padding: 20px;
+  }
+
+  .batch-ops-header {
+    flex-direction: column;
+  }
+
+  .batch-ops-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .batch-ops-grid {
+    grid-template-columns: 1fr;
   }
 }

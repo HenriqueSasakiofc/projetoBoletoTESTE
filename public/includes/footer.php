@@ -14,6 +14,7 @@
         localStorage.setItem("theme", isDark ? "dark" : "light");
       });
     </script>
+    <script src="/js/ui.js"></script>
     <?php if (isset($extraJs)): foreach ($extraJs as $js): ?>
       <script src="/js/<?php echo $js; ?>"></script>
     <?php endforeach; endif; ?>

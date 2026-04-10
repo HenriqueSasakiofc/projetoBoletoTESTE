@@ -15,6 +15,7 @@ include __DIR__ . '/includes/header.php';
     <section class="card">
       <div class="card-header">
         <h2 class="card-title" id="client-name">Carregando...</h2>
+        <button id="delete-client-btn" type="button" class="btn btn-danger">Excluir Cliente</button>
       </div>
       <div class="card-body">
         <div class="details-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -24,6 +25,8 @@ include __DIR__ . '/includes/header.php';
           <div><label class="form-label">E-mail Financeiro</label><p id="client-email-financial">-</p></div>
           <div><label class="form-label">Telefone</label><p id="client-phone">-</p></div>
           <div><label class="form-label">Outros Contatos</label><p id="client-other-contacts">-</p></div>
+          <div><label class="form-label">Dívida Atual</label><p id="client-debt-total">-</p></div>
+          <div><label class="form-label">Status</label><p id="client-status">-</p></div>
         </div>
       </div>
     </section>
