@@ -3,7 +3,7 @@ $pageTitle = "PayReminder";
 $headerTitle = "PayReminder";
 $headerSubtitle = "Gerencie seus clientes e mensagens";
 $currentPage = "dashboard";
-$extraJs = ["api.js", "dashboard.js"];
+$extraJs = ["api.js", "dashboardTemplates.js"];
 include __DIR__ . '/includes/header.php';
 ?>
 
@@ -86,27 +86,65 @@ include __DIR__ . '/includes/header.php';
         Ir para Importação
       </a>
     </div>
+
+    <!-- Outbox Card -->
+    <div class="card import-card">
+      <div class="card-decoration"></div>
+      <div class="card-decoration-2"></div>
+      <div class="card-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8m-18 8.5A2.5 2.5 0 005.5 19h13a2.5 2.5 0 002.5-2.5v-9A2.5 2.5 0 0018.5 5h-13A2.5 2.5 0 003 7.5v9z" />
+        </svg>
+      </div>
+      <h3 class="import-card-title">Outbox de E-mails</h3>
+      <p class="import-card-description">
+        Veja mensagens pendentes, enviadas e com erro, e dispare a fila manualmente
+      </p>
+      <a href="/outbox" class="btn btn-secondary btn-full">
+        Abrir Outbox
+      </a>
+    </div>
   </div>
 
   <!-- Default Messages Section -->
   <div class="messages-section">
     <div class="card messages-card">
       <div class="messages-header">
-        <h2 class="messages-title">Template de Mensagem</h2>
-        <span class="messages-count" id="messagesCount">...</span>
+        <div>
+          <h2 class="messages-title">Configurar e-mails automaticos</h2>
+          <p class="messages-subtitle">Crie uma mensagem para cada momento da cobranca</p>
+        </div>
+        <span class="messages-count" id="messagesCount">3 eventos</span>
       </div>
       <div class="messages-body">
+        <div class="template-event-tabs" id="templateEventTabs">
+          <!-- Rendered by JS -->
+        </div>
+
+        <div class="template-helper-panel">
+          <div>
+            <h3 class="template-helper-title">Caixinhas de informacao</h3>
+            <p class="template-helper-text">
+              Clique em uma caixinha para inserir o campo no assunto ou na mensagem. O sistema troca automaticamente pelo dado real do cliente e da fatura.
+            </p>
+          </div>
+          <div class="template-placeholder-grid" id="templatePlaceholderGrid">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
         <!-- Form -->
         <form id="messageForm">
+          <input type="hidden" id="templateEventCode" />
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="messageTitle">Assunto</label>
-              <input type="text" id="messageTitle" class="form-input" placeholder="Ex: Boas-vindas" required />
+              <input type="text" id="messageTitle" class="form-input template-editable" placeholder="Ex: Seu titulo vence em 7 dias" required />
             </div>
           </div>
           <div class="form-group">
             <label class="form-label" for="messageContent">Corpo da Mensagem</label>
-            <textarea id="messageContent" class="form-input" placeholder="Digite o conteúdo da mensagem..." rows="6" required></textarea>
+            <textarea id="messageContent" class="form-input template-editable" placeholder="Digite o conteudo da mensagem..." rows="8" required></textarea>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">
@@ -120,7 +158,7 @@ include __DIR__ . '/includes/header.php';
 
         <!-- Messages List -->
         <div class="messages-list">
-          <h3 class="messages-list-header">Configuração Atual</h3>
+          <h3 class="messages-list-header">Resumo dos 3 envios configurados</h3>
           <div id="messagesList">
             <!-- Rendered by JS -->
           </div>

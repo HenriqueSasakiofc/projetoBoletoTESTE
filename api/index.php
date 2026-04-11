@@ -38,7 +38,9 @@ if ($method === 'GET') {
     }
     handleRoute('/api/clients', 'ClientsApiController@index');
     handleRoute('/api/clients/{id}', 'ClientsApiController@show');
+    handleRoute('/api/outbox', 'OutboxController@index');
     handleRoute('/api/message-template', 'MessagesApiController@getTemplate');
+    handleRoute('/api/notification-templates', 'MessagesApiController@getNotificationTemplates');
     handleRoute('/api/upload-batches/latest', 'UploadBatchesController@latest');
     handleRoute('/api/upload-batches/{id}/pendings', 'UploadBatchesController@pendings');
 }
@@ -46,6 +48,8 @@ if ($method === 'GET') {
 if ($method === 'POST') {
     handleRoute('/api/auth/login', 'AuthController@login');
     handleRoute('/api/imports/upload', 'ImportsApiController@upload');
+    handleRoute('/api/outbox/schedule-automatic', 'OutboxController@scheduleAutomatic');
+    handleRoute('/api/outbox/dispatch', 'OutboxController@dispatch');
     handleRoute('/api/upload-batches/{id}/reprocess', 'UploadBatchesController@reprocess');
     handleRoute('/api/customers/{id}/send-manual-message', 'MessagesApiController@sendManual');
     handleRoute('/api/receivables/{id}/queue-standard-message', 'ReceivablesController@queueStandardMessage');
@@ -53,6 +57,7 @@ if ($method === 'POST') {
 
 if ($method === 'PUT') {
     handleRoute('/api/message-template', 'MessagesApiController@updateTemplate');
+    handleRoute('/api/notification-templates', 'MessagesApiController@updateNotificationTemplates');
 }
 
 if ($method === 'DELETE') {

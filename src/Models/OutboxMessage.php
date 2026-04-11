@@ -26,4 +26,8 @@ class OutboxMessage extends Model {
     public function receivable() {
         return $this->belongsTo(Receivable::class);
     }
+
+    public function customer() {
+        return $this->belongsTo(Customer::class);
+    }
 }

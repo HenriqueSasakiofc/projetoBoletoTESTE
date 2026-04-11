@@ -22,9 +22,13 @@ class NotifierService {
         'customer_document',
         'customer_email',
         'receivable_number',
+        'invoice_id',
         'nosso_numero',
         'charge_title',
+        'issue_date',
+        'invoice_issue_date',
         'due_date',
+        'invoice_due_date',
         'amount_total',
         'balance_amount',
         'balance_without_interest',
@@ -231,15 +235,15 @@ class NotifierService {
             $mail = new PHPMailer(true);
             try {
                 $mail->isSMTP();
-                $mail->Host       = $_ENV['SMTP_HOST'];
+                $mail->Host       = trim((string) ($_ENV['SMTP_HOST'] ?? ''));
                 $mail->SMTPAuth   = !empty($_ENV['SMTP_USERNAME']);
-                $mail->Username   = $_ENV['SMTP_USERNAME'];
-                $mail->Password   = $_ENV['SMTP_PASSWORD'];
+                $mail->Username   = trim((string) ($_ENV['SMTP_USERNAME'] ?? ''));
+                $mail->Password   = trim((string) ($_ENV['SMTP_PASSWORD'] ?? ''));
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = $_ENV['SMTP_PORT'] ?? 587;
                 $mail->CharSet    = 'UTF-8';
 
-                $mail->setFrom($_ENV['SMTP_FROM_EMAIL'], $_ENV['SMTP_FROM_NAME']);
+                $mail->setFrom(trim((string) ($_ENV['SMTP_FROM_EMAIL'] ?? '')), $_ENV['SMTP_FROM_NAME'] ?? 'Projeto Boleto');
                 
                 // Safe mode override for testing
                 if (($_ENV['SAFE_MODE'] ?? 'false') === 'true') {
@@ -270,7 +274,11 @@ class NotifierService {
                 $sent++;
             } catch (\Exception $e) {
                 $msg->status = 'error';
-                $msg->error_message = substr($mail->ErrorInfo ?: $e->getMessage(), 0, 1000);
+                $errorMessage = $mail->ErrorInfo ?: $e->getMessage();
+                if (stripos($errorMessage, 'Could not authenticate') !== false) {
+                    $errorMessage .= ' Verifique se SMTP_USERNAME e SMTP_FROM_EMAIL sao a mesma conta e se SMTP_PASSWORD e uma senha de app do Gmail.';
+                }
+                $msg->error_message = substr($errorMessage, 0, 1000);
                 $msg->save();
                 $errors++;
             }

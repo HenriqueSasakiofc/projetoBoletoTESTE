@@ -1,5 +1,4 @@
 <?php
-file_put_contents(__DIR__ . '/router.log', "Router hit: " . $_SERVER['REQUEST_URI'] . "\n", FILE_APPEND);
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
 if ($uri === '/cadastro' || $uri === '/cadastro.php') {
@@ -39,6 +38,7 @@ $pages = [
     '/clientes' => '/clientes.php',
     '/importacao' => '/importacao.php',
     '/pendencias' => '/pendencias.php',
+    '/outbox' => '/outbox.php',
     '/cliente' => '/cliente.php',
 ];
 
