@@ -37,6 +37,20 @@ class ImportStorageService
         return $directory . DIRECTORY_SEPARATOR . $kind . '_' . $hash . '.' . $extension;
     }
 
+    public static function getBatchFilePath(UploadBatch $batch, string $kind): ?string
+    {
+        self::validateKind($kind);
+
+        $hash = $kind === 'customers' ? $batch->customers_hash : $batch->receivables_hash;
+        $filename = $kind === 'customers' ? $batch->customers_filename : $batch->receivables_filename;
+
+        if (!$hash || !$filename) {
+            return null;
+        }
+
+        return self::buildStoredPath((int) $batch->company_id, $kind, (string) $hash, (string) $filename);
+    }
+
     private static function ensureDirectory(string $directory): void
     {
         if (is_dir($directory)) {
@@ -69,18 +83,9 @@ class ImportStorageService
 
     public static function resolveBatchFile(UploadBatch $batch, string $kind): ?string
     {
-        self::validateKind($kind);
+        $path = self::getBatchFilePath($batch, $kind);
 
-        $hash = $kind === 'customers' ? $batch->customers_hash : $batch->receivables_hash;
-        $filename = $kind === 'customers' ? $batch->customers_filename : $batch->receivables_filename;
-
-        if (!$hash || !$filename) {
-            return null;
-        }
-
-        $path = self::buildStoredPath((int) $batch->company_id, $kind, (string) $hash, (string) $filename);
-
-        return is_file($path) ? $path : null;
+        return $path && is_file($path) ? $path : null;
     }
 
     public static function hasStoredFiles(UploadBatch $batch): bool

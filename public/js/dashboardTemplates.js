@@ -46,14 +46,24 @@ async function initDashboard() {
   let lastFocusedTemplateField = bodyInput;
 
   async function loadDashboardData() {
+    if (!checkAuth()) {
+      if (loginSection) loginSection.style.display = "block";
+      if (appSection) appSection.style.display = "none";
+      return;
+    }
+
     if (loginSection) loginSection.style.display = "none";
     if (appSection) appSection.style.display = "block";
-    checkAuth();
 
     try {
       const clientsData = await API.request("/api/clients?page=1&page_size=1");
       totalClientsEl.textContent = clientsData.total || 0;
-    } catch {
+    } catch (error) {
+      if (error.status === 401) {
+        if (loginSection) loginSection.style.display = "block";
+        if (appSection) appSection.style.display = "none";
+        return;
+      }
       totalClientsEl.textContent = "-";
     }
 
@@ -164,6 +174,12 @@ async function initDashboard() {
       fillFormFromActiveTemplate();
       renderTemplatesSummary();
     } catch (error) {
+      if (error.status === 401) {
+        if (loginSection) loginSection.style.display = "block";
+        if (appSection) appSection.style.display = "none";
+        return;
+      }
+
       AppUI?.notify({
         type: "error",
         title: "Erro ao carregar templates",
@@ -214,6 +230,7 @@ async function initDashboard() {
       );
 
       API.saveSession(result.access_token, result.user);
+      if (loginSubmitBtn) loginSubmitBtn.textContent = "Entrar";
       loadDashboardData();
     } catch (error) {
       if (loginErrorEl) {

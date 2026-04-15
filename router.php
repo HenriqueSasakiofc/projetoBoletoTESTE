@@ -24,6 +24,8 @@ if (is_file($file)) {
         'jpg' => 'image/jpeg',
         'gif' => 'image/gif',
         'svg' => 'image/svg+xml',
+        'ico' => 'image/x-icon',
+        'webmanifest' => 'application/manifest+json',
     ];
     if (isset($mimes[$ext])) {
         header('Content-Type: ' . $mimes[$ext]);

@@ -47,6 +47,10 @@ const API = {
     const data = isJson ? await response.json() : await response.text();
 
     if (!response.ok) {
+      if (response.status === 401 && auth) {
+        this.clearSession();
+      }
+
       const detail =
         (isJson && (data.error || data.detail || data.message)) ||
         (typeof data === "string" && data) ||
@@ -93,13 +97,19 @@ function checkAuth() {
     // Show user info in header if available
     const userInfo = $("#user-info");
     const userBadgeName = $("#user-badge-name");
+    const primaryTabs = $("#primary-tabs");
     if (userInfo) userInfo.style.display = "flex";
     if (userBadgeName && user) userBadgeName.textContent = user.full_name || user.email || "Usuário";
+    if (primaryTabs) primaryTabs.style.display = "grid";
 
-    $("#logout-btn")?.addEventListener("click", () => {
+    const logoutBtn = $("#logout-btn");
+    if (logoutBtn && !logoutBtn.dataset.bound) {
+      logoutBtn.dataset.bound = "true";
+      logoutBtn.addEventListener("click", () => {
         API.clearSession();
         window.location.href = "/";
-    });
+      });
+    }
 
     return true;
 }

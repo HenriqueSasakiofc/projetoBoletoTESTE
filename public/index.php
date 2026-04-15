@@ -36,6 +36,18 @@ include __DIR__ . '/includes/header.php';
 
   <!-- Dashboard App Section -->
   <div id="app-section" style="display: none;">
+    <section class="dashboard-workspace">
+      <div class="dashboard-status-panel">
+        <div>
+          <span class="dashboard-status-label">Clientes sincronizados</span>
+          <strong class="dashboard-status-value" id="totalClients">...</strong>
+        </div>
+        <p>
+          Use as abas acima como entrada principal para cada funcao. Cada area fica isolada, facilitando suporte e correcao de erros.
+        </p>
+      </div>
+    </section>
+
     <div class="grid">
     <!-- Total Clients Card -->
     <div class="card">
@@ -107,7 +119,7 @@ include __DIR__ . '/includes/header.php';
   </div>
 
   <!-- Default Messages Section -->
-  <div class="messages-section">
+  <div class="messages-section" id="templates-section">
     <div class="card messages-card">
       <div class="messages-header">
         <div>

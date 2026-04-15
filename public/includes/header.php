@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title><?php echo $pageTitle ?? 'Painel de Controle'; ?></title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicons/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicons/favicon-32x32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicons/favicon-180x180.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -48,3 +54,31 @@
         </button>
       </div>
     </header>
+    <?php
+      $activeNav = $currentPage ?? '';
+      if ($activeNav === 'cliente') {
+          $activeNav = 'clientes';
+      } elseif ($activeNav === 'pendencias') {
+          $activeNav = 'importacao';
+      } elseif ($activeNav === 'dashboard') {
+          $activeNav = 'templates';
+      }
+
+      $navItems = [
+          ['key' => 'clientes', 'href' => '/clientes', 'label' => 'Clientes', 'hint' => 'Registros e dividas'],
+          ['key' => 'importacao', 'href' => '/importacao', 'label' => 'Importacao', 'hint' => 'Planilhas e lotes'],
+          ['key' => 'outbox', 'href' => '/outbox', 'label' => 'Outbox', 'hint' => 'Fila e disparos'],
+          ['key' => 'templates', 'href' => '/#templates-section', 'label' => 'Templates', 'hint' => 'E-mails automaticos'],
+      ];
+    ?>
+    <nav class="primary-tabs" id="primary-tabs" aria-label="Navegacao principal" style="display:none;">
+      <?php foreach ($navItems as $item): ?>
+        <a
+          class="primary-tab <?php echo $activeNav === $item['key'] ? 'is-active' : ''; ?>"
+          href="<?php echo $item['href']; ?>"
+        >
+          <strong><?php echo $item['label']; ?></strong>
+          <span><?php echo $item['hint']; ?></span>
+        </a>
+      <?php endforeach; ?>
+    </nav>
